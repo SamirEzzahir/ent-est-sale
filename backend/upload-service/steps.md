@@ -46,3 +46,15 @@ python-multipart
 ### Step 5 — اكتب الملفات
 app/minio_client.py
 app/cassandra_client.py
+app/auth.py
+app/routes.py
+main.py
+generate_token.py
+
+### Step 6 — شغّل الخدمة
+uvicorn main:app --reload --port 8002
+
+### Step 7 — جرّب
+# ولّد tokens
+python generate_token.py
+
