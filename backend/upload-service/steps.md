@@ -43,6 +43,8 @@ cassandra-driver
 python-jose
 python-multipart
 
+pip install -r requirements.txt
+
 ### Step 5 — اكتب الملفات
 app/minio_client.py
 app/cassandra_client.py
