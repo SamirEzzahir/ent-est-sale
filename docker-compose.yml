@@ -20,7 +20,7 @@ services:
     build: ./backend/core-auth
     container_name: core-auth
     ports:
-      - "8001:8001"
+      - "8000:8000"
     networks:
       - app-network
 
