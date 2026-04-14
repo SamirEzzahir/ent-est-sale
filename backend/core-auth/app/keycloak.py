@@ -1,6 +1,7 @@
 import logging
 import os
 from urllib.parse import quote
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import HTTPException
@@ -8,8 +9,19 @@ from jose import JWTError, jwt
 
 logger = logging.getLogger(__name__)
 
+
+def _default_keycloak_public_url() -> str:
+    public_base_url = os.getenv("PUBLIC_BASE_URL", "http://localhost").rstrip("/")
+    keycloak_public_port = os.getenv("KEYCLOAK_PUBLIC_PORT", "8080")
+    parsed = urlparse(public_base_url)
+    hostname = parsed.hostname or "localhost"
+    if parsed.port == int(keycloak_public_port):
+        return public_base_url
+    return f"{parsed.scheme or 'http'}://{hostname}:{keycloak_public_port}"
+
+
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://keycloak:8080")
-KEYCLOAK_PUBLIC_URL = os.getenv("KEYCLOAK_PUBLIC_URL", KEYCLOAK_URL)
+KEYCLOAK_PUBLIC_URL = os.getenv("KEYCLOAK_PUBLIC_URL") or _default_keycloak_public_url()
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "ent-est-sale")
 KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "ent-backend")
 KEYCLOAK_CLIENT_SECRET = os.getenv("KEYCLOAK_CLIENT_SECRET", "")

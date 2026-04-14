@@ -3,7 +3,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-cassandra_host = os.getenv("CASSANDRA_HOST", "localhost")
+cassandra_host = os.getenv("CASSANDRA_HOST", "cassandra")
 cassandra_port = int(os.getenv("CASSANDRA_PORT", "9042"))
 cassandra_keyspace = os.getenv("CASSANDRA_KEYSPACE", "ent")
 
