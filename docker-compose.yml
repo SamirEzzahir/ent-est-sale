@@ -101,9 +101,9 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:latest
     container_name: keycloak
-    command:
+    entrypoint:
       - /bin/sh
-      - -c
+      - -ec
       - |
         sed "s|__PUBLIC_BASE_URL__|$${PUBLIC_BASE_URL}|g" /opt/keycloak/data/import/realm-export.template.json > /opt/keycloak/data/import/realm-export.json
         exec /opt/keycloak/bin/kc.sh start-dev --import-realm --health-enabled=true
@@ -112,7 +112,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./keycloak/realm-export.template.json:/opt/keycloak/data/import/realm-export.template.json:ro
+      - ./keycloak:/opt/keycloak/data/import
     networks:
       - app-network
     healthcheck:
