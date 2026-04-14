@@ -66,7 +66,7 @@ def get_current_user(token: str = Depends(get_token)) -> dict:
     return _decode_token(token)
 
 
-def require_teacher(user: dict = Depends(get_current_user)) -> str:
+def require_teacher_or_admin(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] not in ("teacher", "admin"):
-        raise HTTPException(status_code=403, detail="Teacher role required")
-    return user["username"]
+        raise HTTPException(status_code=403, detail="Teacher or admin role required")
+    return user

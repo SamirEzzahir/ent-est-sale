@@ -1,99 +1,130 @@
-# 🎓 ENT Project (Espace Numérique de Travail)
+# ENT Project - EST Sale
 
-## 📌 Description
+## Overview
 
-This project is a digital workspace (ENT) built with a microservices architecture.
+This repository contains an ENT (Espace Numerique de Travail) project built around a microservices architecture.
 
-It allows:
+Current stack in this repo:
 
-* Authentication (Keycloak)
-* File upload/download
-* Administration
-* Frontend interface
+- Frontend: React + Vite
+- Backend: 4 FastAPI microservices
+- Metadata storage: Cassandra
+- File storage: MinIO
+- Authentication: OAuth2 with Keycloak and `core-auth`
+- DevOps: Docker Compose now, Kubernetes planned later
 
----
+## Current Repository State
 
-## 🏗️ Architecture
+What is already implemented in the repo:
 
-* Frontend: React
-* Backend: Microservices (FastAPI / Node)
-* Database: Cassandra
-* Storage: MinIO
-* Auth: Keycloak
-* DevOps: Docker, Docker Compose, Kubernetes (later)
+- Nginx gateway for dev mode
+- `core-auth`
+- `upload-service`
+- `download-service`
+- `admin-service`
+- React frontend
+- Docker Compose stack
+- Cassandra initialization script
+- Keycloak realm export
 
----
+What is still planned, but not fully implemented here yet:
 
-## 📁 Project Structure
+- Kubernetes manifests
+- Ollama integration
 
-```
+## Project Structure
+
+```text
 backend/
-  ├── core-auth/
-  ├── upload-service/
-  ├── download-service/
-  └── admin-service/
+  core-auth/
+  upload-service/
+  download-service/
+  admin-service/
 
 frontend/
-nginx/
+docs/
+nginx/        # dev gateway config
 keycloak/
 cassandra/
-minio/
-k8s/
+minio/        # placeholder for future init assets
+k8s/          # placeholder for future manifests
 ```
 
----
+## Current Local Run
 
-## 🚀 Run project (local)
+### 1. Clone the repository
 
-### 1. Clone repo
-
-```
+```bash
 git clone https://github.com/SamirEzzahir/ent-est-sale.git
 cd ent-est-sale
 ```
 
-### 2. Run with Docker
+### 2. Create `.env`
 
+```bash
+cp .env.example .env
 ```
-docker-compose up -d
+
+Then adjust values if needed.
+
+### 3. Start the stack
+
+```bash
+docker compose up -d --build
 ```
 
-### 3. Access services
+## Current Access Points
 
-* Frontend: http://localhost:3000
-* Keycloak: http://localhost:8080
-* MinIO: http://localhost:9001
+These are the ports defined by the current `docker-compose.yml`:
 
----
+- Main app through gateway: http://localhost
+- Frontend debug access: http://localhost:5173
+- Core Auth API: http://localhost:8001
+- Upload Service API: http://localhost:8002
+- Download Service API: http://localhost:8003
+- Admin Service API: http://localhost:8004
+- Keycloak: http://localhost:8080
+- MinIO API: http://localhost:9000
+- MinIO Console: http://localhost:9001
+- Cassandra: `localhost:9042`
 
-## 🌿 Branch Strategy
+## Current Functional Scope
 
-* main → stable version
-* develop → integration branch
-* feature/* → feature development
+Implemented behavior today:
 
----
+- Keycloak-first login through `core-auth`
+- Teacher upload of files
+- Student listing and download of uploaded files
+- Admin CRUD on users through Keycloak-backed admin APIs
 
-## 👥 Team Workflow
+Important clarification:
 
-1. Create feature branch
-2. Push code
-3. Open Pull Request to `develop`
-4. Review
-5. Merge
+- the current backend is mostly file-centric, not fully course-centric yet
+- the normal browser flow now goes through the Nginx gateway at `http://localhost`
+- direct service ports remain available for debugging
 
----
+## Target Architecture
 
-## 👤 Team Roles
+The target project direction remains:
 
-* Dev 1 → core-auth + frontend
-* Dev 2 → upload-service
-* Dev 3 → download + admin
-* DevOps → docker + infra
-* PM → coordination + review
+- 4 mandatory microservices:
+  - `core-auth`
+  - `upload-service`
+  - `download-service`
+  - `admin-service`
+- Keycloak for centralized auth
+- Cassandra for metadata
+- MinIO for file objects
+- Docker Compose for local development
+- Kubernetes for deployment
+- optional Ollama bonus after the core platform is stable
 
----
+## Branch Strategy
 
-## 📌 Status
+- `main`: validated milestones
+- `develop`: integration branch
+- `feature/*`: work in progress
 
-🚧 Project in progress (Sprint 1)
+## Status
+
+Current repo status: working MVP in progress, with partial implementation of the target architecture.

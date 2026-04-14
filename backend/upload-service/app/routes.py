@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from .minio_client import get_client, BUCKET
 from .cassandra_client import get_session
 from .auth import require_teacher
@@ -16,6 +16,7 @@ ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.docx', '.pptx', '.xlsx', '.jpg', '.jpeg'
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
+    course_name: str = Form("default"),
     username: str = Depends(require_teacher)
 ):
     try:
@@ -48,7 +49,7 @@ async def upload_file(
             cassandra_session.execute("""
                 INSERT INTO course_files (id, filename, course_name, uploaded_by, upload_date, minio_path)
                 VALUES (%s, %s, %s, %s, %s, %s)
-            """, (file_id, file.filename, 'default', username, datetime.utcnow(), f"{BUCKET}/{file_key}"))
+            """, (file_id, file.filename, course_name, username, datetime.utcnow(), f"{BUCKET}/{file_key}"))
             logger.info(f"Metadata saved for file: {file_id}")
         except Exception as db_error:
             logger.warning(f"Failed to save metadata to Cassandra: {str(db_error)}. File still uploaded to MinIO.")
