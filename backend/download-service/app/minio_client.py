@@ -1,11 +1,23 @@
 from minio import Minio
 import os
 import logging
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-minio_host = os.getenv("MINIO_HOST", "localhost:9000")
-minio_public_host = os.getenv("MINIO_PUBLIC_HOST", minio_host)
+
+def _default_minio_public_host() -> str:
+    public_base_url = os.getenv("PUBLIC_BASE_URL", "http://localhost").rstrip("/")
+    minio_public_port = os.getenv("MINIO_PUBLIC_PORT", "9000")
+    parsed = urlparse(public_base_url)
+    hostname = parsed.hostname or "localhost"
+    if hostname in {"localhost", "127.0.0.1"}:
+        hostname = "host.docker.internal"
+    return f"{hostname}:{minio_public_port}"
+
+
+minio_host = os.getenv("MINIO_HOST", "minio:9000")
+minio_public_host = os.getenv("MINIO_PUBLIC_HOST") or _default_minio_public_host()
 minio_access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 minio_secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 minio_secure = os.getenv("MINIO_SECURE", "False").lower() == "true"

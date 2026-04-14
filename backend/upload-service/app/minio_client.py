@@ -4,7 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-minio_host = os.getenv("MINIO_HOST", "localhost:9000")
+minio_host = os.getenv("MINIO_HOST", "minio:9000")
 minio_access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 minio_secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 minio_secure = os.getenv("MINIO_SECURE", "False").lower() == "true"
