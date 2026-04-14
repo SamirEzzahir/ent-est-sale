@@ -1,3 +1,0 @@
-﻿This is a test document for upload service testing.
-Created on April 11, 2026.
-Testing file upload functionality.

@@ -24,6 +24,7 @@ def _get_jwks() -> dict:
         resp = httpx.get(url, timeout=5)
         resp.raise_for_status()
         _jwks_cache = resp.json()
+        logger.info("Loaded JWKS from %s", url)
         return _jwks_cache
     except Exception as exc:
         logger.error("Failed to fetch JWKS: %s", exc)
@@ -43,7 +44,6 @@ def _decode_token(token: str) -> dict:
         payload = jwt.decode(token, jwks, algorithms=["RS256"], audience=KEYCLOAK_CLIENT_ID)
     except JWTError as exc:
         raise HTTPException(status_code=401, detail=f"Invalid token: {exc}")
-
     username = payload.get("preferred_username") or payload.get("sub")
     realm_roles = payload.get("realm_access", {}).get("roles", [])
     role = _pick_role(realm_roles)
@@ -66,7 +66,7 @@ def get_current_user(token: str = Depends(get_token)) -> dict:
     return _decode_token(token)
 
 
-def require_teacher(user: dict = Depends(get_current_user)) -> str:
-    if user["role"] not in ("teacher", "admin"):
-        raise HTTPException(status_code=403, detail="Teacher role required")
-    return user["username"]
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user
