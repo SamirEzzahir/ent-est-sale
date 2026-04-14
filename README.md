@@ -4,7 +4,7 @@
 
 This repository contains an ENT (Espace Numerique de Travail) project built around a microservices architecture.
 
-Current stack in this repo:
+Current stack in this repos:
 
 - Frontend: React + Vite
 - Backend: 4 FastAPI microservices
@@ -12,7 +12,7 @@ Current stack in this repo:
 - File storage: MinIO
 - Authentication: OAuth2 with Keycloak and `core-auth`
 - DevOps: Docker Compose now, Kubernetes planned later
-
+ 
 ## Current Repository State
 
 What is already implemented in the repo:
