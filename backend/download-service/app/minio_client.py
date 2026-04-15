@@ -11,8 +11,6 @@ def _default_minio_public_host() -> str:
     minio_public_port = os.getenv("MINIO_PUBLIC_PORT", "9000")
     parsed = urlparse(public_base_url)
     hostname = parsed.hostname or "localhost"
-    if hostname in {"localhost", "127.0.0.1"}:
-        hostname = "host.docker.internal"
     return f"{hostname}:{minio_public_port}"
 
 

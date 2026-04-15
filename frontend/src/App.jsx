@@ -580,16 +580,16 @@ function AuthCallback({ onLogin }) {
 
 export default function App() {
   const [session, setSession] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('ent_session')) } catch { return null }
+    try { return JSON.parse(sessionStorage.getItem('ent_session')) } catch { return null }
   })
 
   function handleLogin(data) {
-    localStorage.setItem('ent_session', JSON.stringify(data))
+    sessionStorage.setItem('ent_session', JSON.stringify(data))
     setSession(data)
   }
 
   async function handleLogout() {
-    localStorage.removeItem('ent_session')
+    sessionStorage.removeItem('ent_session')
     setSession(null)
     try {
       const postLogoutRedirectUri = `${window.location.origin}/`

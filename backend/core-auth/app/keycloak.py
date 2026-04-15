@@ -106,11 +106,8 @@ def exchange_code_for_token(code: str, redirect_uri: str) -> dict:
 
 
 def get_keycloak_logout_url(post_logout_redirect_uri: str) -> str:
-    logout_url = (
+    return (
         f"{KEYCLOAK_PUBLIC_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/logout"
         f"?client_id={KEYCLOAK_CLIENT_ID}"
         f"&post_logout_redirect_uri={quote(post_logout_redirect_uri, safe='')}"
     )
-    if KEYCLOAK_CLIENT_SECRET:
-        logout_url += f"&client_secret={quote(KEYCLOAK_CLIENT_SECRET, safe='')}"
-    return logout_url

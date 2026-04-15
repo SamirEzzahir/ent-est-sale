@@ -6,6 +6,7 @@ Ce document decrit:
 
 - l'architecture cible du projet ENT
 - l'etat reel de l'implementation dans ce depot
+- le perimetre prioritaire de la phase actuelle sous Docker Compose
 
 Il faut donc distinguer:
 
@@ -50,6 +51,11 @@ Le depot ne contient pas encore:
 
 - des manifests Kubernetes reels
 - un modele metier complet centre sur les cours
+
+Important pour la phase actuelle:
+
+- Docker Compose est le seul mode d'execution a stabiliser et demontrer maintenant
+- Kubernetes reste une cible future et n'entre pas dans le chemin critique courant
 
 ## 4. Vue d'ensemble
 
@@ -368,6 +374,8 @@ Une version plus riche pourra viser:
 Kubernetes reste une cible du projet, mais pas encore une partie implementee du depot.
 
 Le dossier `k8s/` existe aujourd'hui comme placeholder.
+
+Pour la phase actuelle, cela ne doit pas etre presente comme un livrable prioritaire.
 
 ## 13. Conclusion
 

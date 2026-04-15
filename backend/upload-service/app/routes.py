@@ -43,7 +43,7 @@ async def upload_file(
         )
         logger.info(f"File uploaded to MinIO: {file_key}")
         
-        # Insert metadata into Cassandra (if available)
+        # Persist metadata only after the object upload succeeds.
         try:
             cassandra_session = get_session()
             cassandra_session.execute("""
@@ -52,7 +52,13 @@ async def upload_file(
             """, (file_id, file.filename, course_name, username, datetime.utcnow(), f"{BUCKET}/{file_key}"))
             logger.info(f"Metadata saved for file: {file_id}")
         except Exception as db_error:
-            logger.warning(f"Failed to save metadata to Cassandra: {str(db_error)}. File still uploaded to MinIO.")
+            logger.warning(f"Failed to save metadata to Cassandra: {str(db_error)}. Rolling back uploaded object.")
+            try:
+                minio_client.remove_object(BUCKET, file_key)
+                logger.info(f"Rolled back MinIO object after Cassandra failure: {file_key}")
+            except Exception as rollback_error:
+                logger.error(f"Failed to roll back MinIO object {file_key}: {rollback_error}")
+            raise HTTPException(status_code=503, detail="Failed to persist file metadata")
         
         return {
             "id": str(file_id), 

@@ -4,14 +4,14 @@
 
 This repository contains an ENT (Espace Numerique de Travail) project built around a microservices architecture.
 
-Current stack in this repos:
+Current stack in this repo:
 
 - Frontend: React + Vite
 - Backend: 4 FastAPI microservices
 - Metadata storage: Cassandra
 - File storage: MinIO
 - Authentication: OAuth2 with Keycloak and `core-auth`
-- DevOps: Docker Compose now, Kubernetes planned later
+- DevOps: Docker Compose is the current target runtime
  
 ## Current Repository State
 
@@ -27,9 +27,9 @@ What is already implemented in the repo:
 - Cassandra initialization script
 - Keycloak realm export
 
-What is still planned, but not fully implemented here yet:
+What is intentionally outside the current delivery scope:
 
-- Kubernetes manifests
+- Kubernetes rollout
 - Ollama integration
 
 ## Project Structure
@@ -50,7 +50,7 @@ minio/        # placeholder for future init assets
 k8s/          # placeholder for future manifests
 ```
 
-## Current Local Run
+## Current Local Run With Docker Compose
 
 ### 1. Clone the repository
 
@@ -102,6 +102,7 @@ Important clarification:
 - the current backend is mostly file-centric, not fully course-centric yet
 - the normal browser flow now goes through the Nginx gateway at `http://localhost`
 - direct service ports remain available for debugging
+- Docker Compose is the only runtime target that must be demo-ready right now
 
 ## Target Architecture
 
@@ -115,8 +116,8 @@ The target project direction remains:
 - Keycloak for centralized auth
 - Cassandra for metadata
 - MinIO for file objects
-- Docker Compose for local development
-- Kubernetes for deployment
+- Docker Compose for the current phase
+- Kubernetes only as a later deployment target
 - optional Ollama bonus after the core platform is stable
 
 ## Branch Strategy
@@ -127,4 +128,4 @@ The target project direction remains:
 
 ## Status
 
-Current repo status: working MVP in progress, with partial implementation of the target architecture.
+Current repo status: working Docker Compose MVP in progress, with partial implementation of the wider target architecture.
