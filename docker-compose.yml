@@ -1,6 +1,5 @@
 services:
 
-
   # =====================
   # GATEWAY
   # =====================
@@ -26,8 +25,7 @@ services:
   frontend:
     build: ./frontend
     container_name: frontend
-    ports:
-      - "5173:5173"
+    # ✅ Remove direct port, nginx handles it
     networks:
       - app-network
 
@@ -97,26 +95,41 @@ services:
       - app-network
 
   # =====================
-  # KEYCLOAK
+  # KEYCLOAK  ← all fixes here
   # =====================
   keycloak:
-      image: quay.io/keycloak/keycloak:latest
-      container_name: keycloak
-      command: ["start-dev", "--import-realm", "--health-enabled=true"]
-      ports:
-        - "8080:8080"
-      env_file:
-        - .env
-      volumes:
-        - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
-      networks:
-        - app-network
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: keycloak
+    ports:
+    - "8080:8080"
+    entrypoint:
+    - /bin/sh
+    - -ec
+    - |
+      exec /opt/keycloak/bin/kc.sh start-dev --import-realm --health-enabled=true
+    env_file:
+    - .env
+    environment:
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+    volumes:
+    - ./keycloak:/opt/keycloak/data/import
+    networks:
+    - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo UP || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 600s
 
   # =====================
   # MINIO
   # =====================
   minio:
-    image: minio/minio
+    image: minio/minio:latest
     container_name: minio
     command: server /data --console-address ":9001"
     ports:
@@ -133,7 +146,7 @@ services:
   # CASSANDRA
   # =====================
   cassandra:
-    image: cassandra:latest
+    image: cassandra:4.1
     container_name: cassandra
     ports:
       - "9042:9042"
@@ -142,13 +155,14 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
-      interval: 15s
+      test: ["CMD-SHELL", "cqlsh localhost 9042 -e 'describe keyspaces' || exit 1"]
+      interval: 20s
       timeout: 10s
-      retries: 10
+      retries: 20
+      start_period: 420s
 
   cassandra-init:
-    image: cassandra:latest
+    image: cassandra:4.1
     container_name: cassandra-init
     depends_on:
       cassandra:
