@@ -6,6 +6,7 @@ const API = {
   upload: '/api/upload',
   download: '/api/download',
   admin: '/api/admin',
+  ai: '/api/ai',
 }
 
 function authHeaders(token) {
@@ -494,6 +495,163 @@ function AdminView({ token }) {
   )
 }
 
+function AssistantView({ session }) {
+  const token = session.access_token
+  const [question, setQuestion] = useState('')
+  const [selectedFileId, setSelectedFileId] = useState('')
+  const [files, setFiles] = useState([])
+  const [answer, setAnswer] = useState('')
+  const [provider, setProvider] = useState('')
+  const [status, setStatus] = useState({ loading: true, sending: false, error: '', info: '' })
+  const [health, setHealth] = useState(null)
+
+  useEffect(() => {
+    async function loadAssistantContext() {
+      try {
+        const [filesRes, healthRes] = await Promise.all([
+          fetch(`${API.ai}/context/files`, { headers: authHeaders(token) }),
+          fetch(`${API.ai}/health`, { headers: authHeaders(token) }),
+        ])
+
+        const filesData = await readResponseData(filesRes)
+        const healthData = await readResponseData(healthRes)
+
+        if (!filesRes.ok) throw new Error(filesData.detail || 'Impossible de charger le contexte IA')
+        if (!healthRes.ok) throw new Error(healthData.detail || "Impossible d'obtenir l'etat du service IA")
+
+        setFiles(filesData.files || [])
+        setHealth(healthData)
+        setStatus(current => ({ ...current, loading: false, error: '' }))
+      } catch (err) {
+        setStatus(current => ({ ...current, loading: false, error: err.message }))
+      }
+    }
+
+    loadAssistantContext()
+  }, [token])
+
+  async function handleAsk(e) {
+    e.preventDefault()
+    if (!question.trim()) return
+
+    setStatus(current => ({ ...current, sending: true, error: '', info: '' }))
+    try {
+      const res = await fetch(`${API.ai}/chat`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({
+          message: question.trim(),
+          file_id: selectedFileId || null,
+        }),
+      })
+      const data = await readResponseData(res)
+      if (!res.ok) throw new Error(data.detail || "Echec de la requete vers l'assistant")
+      setAnswer(data.answer || '')
+      setProvider(data.provider || '')
+      setStatus(current => ({
+        ...current,
+        sending: false,
+        info: data.provider === 'fallback'
+          ? 'Reponse generee en mode MVP de secours car Ollama nest pas encore pret.'
+          : 'Reponse generee par Ollama.',
+      }))
+    } catch (err) {
+      setStatus(current => ({ ...current, sending: false, error: err.message }))
+    }
+  }
+
+  function usePrompt(text) {
+    setQuestion(text)
+  }
+
+  return (
+    <div className="view-container">
+      <div className="assistant-header">
+        <div>
+          <h2>Assistant IA</h2>
+          <p className="subtitle">Posez une question generale ou ciblez une ressource deja disponible dans la plateforme.</p>
+        </div>
+        {health && (
+          <div className="assistant-status-card">
+            <strong>Mode</strong>
+            <span>{health.ollama_models?.length ? `Ollama (${health.ollama_model})` : 'MVP fallback'}</span>
+          </div>
+        )}
+      </div>
+
+      {status.error && <div className="alert alert-error">{status.error}</div>}
+      {status.info && <div className="alert alert-info">{status.info}</div>}
+
+      <div className="assistant-grid">
+        <div className="assistant-panel">
+          <h3>Question</h3>
+          <form onSubmit={handleAsk}>
+            <div className="form-group">
+              <label>Ressource ciblee (optionnel)</label>
+              <select value={selectedFileId} onChange={e => setSelectedFileId(e.target.value)} disabled={status.loading}>
+                <option value="">Aucune ressource specifique</option>
+                {files.map(file => (
+                  <option key={file.id} value={file.id}>
+                    {file.course_name} - {file.filename}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Votre question</label>
+              <textarea
+                className="assistant-textarea"
+                value={question}
+                onChange={e => setQuestion(e.target.value)}
+                placeholder="Ex: Quels cours sont disponibles pour moi ?"
+                rows={6}
+              />
+            </div>
+            <div className="assistant-actions">
+              <button type="submit" className="btn btn-primary" disabled={status.loading || status.sending || !question.trim()}>
+                {status.sending ? 'Envoi en cours...' : "Demander a l'assistant"}
+              </button>
+            </div>
+          </form>
+
+          <div className="assistant-suggestions">
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => usePrompt('Quels cours sont disponibles pour moi ?')}>
+              Cours disponibles
+            </button>
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => usePrompt('Propose-moi comment exploiter au mieux les ressources existantes.')}>
+              Conseils d'utilisation
+            </button>
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => usePrompt('Resume les informations connues sur cette ressource.')}>
+              Resume metadata
+            </button>
+          </div>
+        </div>
+
+        <div className="assistant-panel">
+          <h3>Reponse</h3>
+          {status.loading && <div className="loading">Chargement du contexte IA...</div>}
+          {!status.loading && !answer && (
+            <div className="assistant-answer assistant-answer-empty">
+              L'assistant est pret. Choisissez une ressource si besoin, puis envoyez votre question.
+            </div>
+          )}
+          {answer && (
+            <div className="assistant-answer">
+              {provider && <div className="assistant-provider">Source: {provider}</div>}
+              <p>{answer}</p>
+            </div>
+          )}
+          {!!files.length && (
+            <div className="assistant-context">
+              <strong>Ressources detectees:</strong> {files.length}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function fileIcon(filename) {
   const ext = filename?.split('.').pop()?.toLowerCase()
   const icons = { pdf: 'PDF', docx: 'DOC', pptx: 'PPT', xlsx: 'XLS', jpg: 'IMG', jpeg: 'IMG', png: 'IMG', txt: 'TXT' }
@@ -509,9 +667,9 @@ function Dashboard({ session, onLogout }) {
   const [activeTab, setActiveTab] = useState(session.role === 'admin' ? 'admin' : session.role === 'teacher' ? 'upload' : 'courses')
 
   const tabs = {
-    student: [{ id: 'courses', label: 'Cours' }],
-    teacher: [{ id: 'courses', label: 'Cours' }, { id: 'upload', label: 'Deposer un fichier' }],
-    admin: [{ id: 'courses', label: 'Cours' }, { id: 'upload', label: 'Deposer' }, { id: 'admin', label: 'Utilisateurs' }],
+    student: [{ id: 'courses', label: 'Cours' }, { id: 'assistant', label: 'Assistant IA' }],
+    teacher: [{ id: 'courses', label: 'Cours' }, { id: 'upload', label: 'Deposer un fichier' }, { id: 'assistant', label: 'Assistant IA' }],
+    admin: [{ id: 'courses', label: 'Cours' }, { id: 'upload', label: 'Deposer' }, { id: 'admin', label: 'Utilisateurs' }, { id: 'assistant', label: 'Assistant IA' }],
   }
 
   const currentTabs = tabs[session.role] || tabs.student
@@ -534,6 +692,7 @@ function Dashboard({ session, onLogout }) {
         {activeTab === 'courses' && <StudentView session={session} />}
         {activeTab === 'upload' && <TeacherView token={session.access_token} />}
         {activeTab === 'admin' && <AdminView token={session.access_token} />}
+        {activeTab === 'assistant' && <AssistantView session={session} />}
       </main>
     </div>
   )
