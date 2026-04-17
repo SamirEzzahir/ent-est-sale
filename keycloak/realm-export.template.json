@@ -1,0 +1,87 @@
+{
+  "realm": "ent-est-sale",
+  "displayName": "ENT EST Sale",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "roles": {
+    "realm": [
+      { "name": "admin", "description": "Administrateur de la plateforme" },
+      { "name": "teacher", "description": "Enseignant - peut uploader des cours" },
+      { "name": "student", "description": "Etudiant - peut consulter et telecharger" }
+    ]
+  },
+  "defaultRoles": ["student"],
+  "clients": [
+    {
+      "clientId": "ent-backend",
+      "name": "ENT Backend",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "ent-backend-secret",
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["__PUBLIC_BASE_URL__/*"],
+      "webOrigins": ["__PUBLIC_BASE_URL__"],
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "86400"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@est-sale.ma",
+      "firstName": "Admin",
+      "lastName": "ENT",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "admin123", "temporary": false }],
+      "realmRoles": ["admin"]
+    },
+    {
+      "username": "teacher1",
+      "email": "teacher1@est-sale.ma",
+      "firstName": "Enseignant",
+      "lastName": "Un",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "teacher123", "temporary": false }],
+      "realmRoles": ["teacher"]
+    },
+    {
+      "username": "student1",
+      "email": "student1@est-sale.ma",
+      "firstName": "Etudiant",
+      "lastName": "Un",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "student123", "temporary": false }],
+      "realmRoles": ["student"]
+    }
+  ]
+}
