@@ -147,6 +147,49 @@ def create_keycloak_user(
     return get_keycloak_user(user_id)
 
 
+def update_keycloak_user(
+    user_id: str,
+    *,
+    username: str,
+    role: str,
+    email: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    enabled: bool = True,
+    password: Optional[str] = None,
+) -> dict:
+    payload = {
+        "username": username,
+        "email": email or "",
+        "enabled": enabled,
+        "firstName": first_name or "",
+        "lastName": last_name or "",
+    }
+    response = httpx.put(
+        f"{_admin_base_url()}/users/{user_id}",
+        headers=_admin_headers(),
+        json=payload,
+        timeout=10,
+    )
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail="User not found")
+    if response.status_code == 409:
+        raise HTTPException(status_code=409, detail="Username already exists")
+    response.raise_for_status()
+
+    if password:
+        password_response = httpx.put(
+            f"{_admin_base_url()}/users/{user_id}/reset-password",
+            headers=_admin_headers(),
+            json={"type": "password", "value": password, "temporary": False},
+            timeout=10,
+        )
+        password_response.raise_for_status()
+
+    set_user_realm_role(user_id, role)
+    return get_keycloak_user(user_id)
+
+
 def set_user_realm_role(user_id: str, role_name: str) -> dict:
     current_roles = _get_user_role_mappings(user_id)
     if current_roles:

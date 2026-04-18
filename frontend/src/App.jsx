@@ -113,16 +113,54 @@ function StudentView({ session }) {
     loadFiles()
   }, [token])
 
+  async function fetchFileBlob(fileId, disposition = 'attachment') {
+    const res = await fetch(`${API.download}/files/${fileId}/content?disposition=${disposition}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) {
+      const data = await readResponseData(res)
+      throw new Error(data.detail || 'Impossible de recuperer le fichier')
+    }
+
+    const blob = await res.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    return objectUrl
+  }
+
   async function handleDownload(fileId, filename) {
     setDownloadMsg('')
     try {
-      const res = await fetch(`${API.download}/files/${fileId}/download`, {
-        headers: authHeaders(token),
-      })
-      const data = await readResponseData(res)
-      if (!res.ok) throw new Error('Impossible de generer le lien')
-      window.open(data.download_url, '_blank')
-      setDownloadMsg(`Lien genere pour "${filename}"`)
+      const objectUrl = await fetchFileBlob(fileId, 'attachment')
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+      setDownloadMsg(`Telechargement lance pour "${filename}"`)
+    } catch (err) {
+      setDownloadMsg(`Erreur : ${err.message}`)
+    }
+  }
+
+  async function handlePreview(file) {
+    if (editingId === file.id) return
+    setDownloadMsg('')
+    try {
+      const disposition = isPdfFile(file.filename) ? 'inline' : 'attachment'
+      const objectUrl = await fetchFileBlob(file.id, disposition)
+      const previewWindow = window.open(objectUrl, '_blank', 'noopener,noreferrer')
+      if (!previewWindow) {
+        URL.revokeObjectURL(objectUrl)
+        throw new Error('Le navigateur a bloque l ouverture du fichier')
+      }
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60000)
+      setDownloadMsg(
+        isPdfFile(file.filename)
+          ? `Apercu ouvert pour "${file.filename}"`
+          : `Fichier ouvert pour "${file.filename}"`
+      )
     } catch (err) {
       setDownloadMsg(`Erreur : ${err.message}`)
     }
@@ -189,35 +227,59 @@ function StudentView({ session }) {
       <div className="files-grid">
         {files.map(f => (
           <div key={f.id} className="file-card">
-            <div className="file-icon">{fileIcon(f.filename)}</div>
-            <div className="file-info">
-              {editingId === f.id ? (
-                <div className="file-edit-form">
-                  <div className="form-group">
-                    <label>Nom du fichier</label>
-                    <input
-                      type="text"
-                      value={editForm.filename}
-                      onChange={e => setEditForm(current => ({ ...current, filename: e.target.value }))}
-                    />
+            <div
+              className="file-main"
+              onClick={() => handlePreview(f)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  handlePreview(f)
+                }
+              }}
+              role="button"
+              tabIndex={editingId === f.id ? -1 : 0}
+              title={isPdfFile(f.filename) ? 'Ouvrir le PDF dans un nouvel onglet' : 'Ouvrir le fichier'}
+            >
+              <div className={`file-icon ${isPdfFile(f.filename) ? 'file-icon-pdf' : ''}`}>
+                <span className="file-icon-label">{fileIcon(f.filename)}</span>
+              </div>
+              <div className="file-info">
+                {editingId === f.id ? (
+                  <div className="file-edit-form">
+                    <div className="form-group">
+                      <label>Nom du fichier</label>
+                      <input
+                        type="text"
+                        value={editForm.filename}
+                        onChange={e => setEditForm(current => ({ ...current, filename: e.target.value }))}
+                        onClick={e => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Nom du cours</label>
+                      <input
+                        type="text"
+                        value={editForm.course_name}
+                        onChange={e => setEditForm(current => ({ ...current, course_name: e.target.value }))}
+                        onClick={e => e.stopPropagation()}
+                      />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label>Nom du cours</label>
-                    <input
-                      type="text"
-                      value={editForm.course_name}
-                      onChange={e => setEditForm(current => ({ ...current, course_name: e.target.value }))}
-                    />
-                  </div>
+                ) : (
+                  <>
+                    <div className="file-topline">
+                      <div className="file-name">{f.filename}</div>
+                      {isPdfFile(f.filename) && <span className="file-pill">PDF</span>}
+                    </div>
+                    <div className="file-meta">Cours : {f.course_name}</div>
+                  </>
+                )}
+                <div className="file-meta">Par : {f.uploaded_by}</div>
+                <div className="file-meta">{formatDate(f.upload_date)}</div>
+                <div className="file-hint">
+                  {isPdfFile(f.filename) ? 'Cliquer pour ouvrir dans le navigateur' : 'Cliquer pour ouvrir le fichier'}
                 </div>
-              ) : (
-                <>
-                  <div className="file-name">{f.filename}</div>
-                  <div className="file-meta">Cours : {f.course_name}</div>
-                </>
-              )}
-              <div className="file-meta">Par : {f.uploaded_by}</div>
-              <div className="file-meta">{formatDate(f.upload_date)}</div>
+              </div>
             </div>
             <div className="file-actions">
               <button className="btn btn-sm btn-primary" onClick={() => handleDownload(f.id, f.filename)}>
@@ -335,6 +397,16 @@ function AdminView({ token }) {
   const [msg, setMsg] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'student', email: '' })
+  const [editingUser, setEditingUser] = useState(null)
+  const [editUserForm, setEditUserForm] = useState({
+    username: '',
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: 'student',
+    enabled: true,
+    password: '',
+  })
 
   function loadUsers() {
     setLoading(true)
@@ -403,6 +475,59 @@ function AdminView({ token }) {
     }
   }
 
+  function openEditModal(user) {
+    setEditingUser(user)
+    setEditUserForm({
+      username: user.username || '',
+      email: user.email || '',
+      first_name: user.first_name || '',
+      last_name: user.last_name || '',
+      role: user.role || 'student',
+      enabled: user.enabled ?? true,
+      password: '',
+    })
+    setMsg('')
+  }
+
+  function closeEditModal() {
+    setEditingUser(null)
+    setEditUserForm({
+      username: '',
+      email: '',
+      first_name: '',
+      last_name: '',
+      role: 'student',
+      enabled: true,
+      password: '',
+    })
+  }
+
+  async function handleUpdateUser(e) {
+    e.preventDefault()
+    if (!editingUser) return
+    setMsg('')
+    try {
+      const res = await fetch(`${API.admin}/users/${editingUser.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(token),
+        body: JSON.stringify({
+          ...editUserForm,
+          email: editUserForm.email || null,
+          first_name: editUserForm.first_name || null,
+          last_name: editUserForm.last_name || null,
+          password: editUserForm.password || null,
+        }),
+      })
+      const data = await readResponseData(res)
+      if (!res.ok) throw new Error(data.detail || 'Echec de la mise a jour')
+      setUsers(current => current.map(user => (user.id === data.id ? data : user)))
+      setMsg(`Utilisateur "${data.username}" mis a jour avec succes`)
+      closeEditModal()
+    } catch (err) {
+      setMsg(`Erreur : ${err.message}`)
+    }
+  }
+
   return (
     <div className="view-container">
       <div className="view-header">
@@ -460,7 +585,10 @@ function AdminView({ token }) {
             <tr>
               <th>Utilisateur</th>
               <th>Email</th>
+              <th>Prenom</th>
+              <th>Nom</th>
               <th>Role</th>
+              <th>Edition</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -469,6 +597,8 @@ function AdminView({ token }) {
               <tr key={u.id}>
                 <td><strong>{u.username}</strong></td>
                 <td>{u.email}</td>
+                <td>{u.first_name || '-'}</td>
+                <td>{u.last_name || '-'}</td>
                 <td>
                   <select
                     className={`role-select role-${u.role}`}
@@ -481,6 +611,11 @@ function AdminView({ token }) {
                   </select>
                 </td>
                 <td>
+                  <button className="btn btn-sm btn-outline" onClick={() => openEditModal(u)}>
+                    Modifier
+                  </button>
+                </td>
+                <td>
                   <button className="btn btn-sm btn-danger" onClick={() => handleDelete(u.id, u.username)}>
                     Supprimer
                   </button>
@@ -490,6 +625,94 @@ function AdminView({ token }) {
           </tbody>
         </table>
       </div>
+
+      {editingUser && (
+        <div className="modal-backdrop" onClick={closeEditModal}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3>Modifier l'utilisateur</h3>
+                <p>{editingUser.username}</p>
+              </div>
+              <button type="button" className="btn btn-sm btn-outline" onClick={closeEditModal}>
+                Fermer
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateUser}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Nom d'utilisateur</label>
+                  <input
+                    type="text"
+                    value={editUserForm.username}
+                    onChange={e => setEditUserForm(current => ({ ...current, username: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    value={editUserForm.email}
+                    onChange={e => setEditUserForm(current => ({ ...current, email: e.target.value }))}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Prenom</label>
+                  <input
+                    type="text"
+                    value={editUserForm.first_name}
+                    onChange={e => setEditUserForm(current => ({ ...current, first_name: e.target.value }))}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Nom</label>
+                  <input
+                    type="text"
+                    value={editUserForm.last_name}
+                    onChange={e => setEditUserForm(current => ({ ...current, last_name: e.target.value }))}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Role</label>
+                  <select
+                    value={editUserForm.role}
+                    onChange={e => setEditUserForm(current => ({ ...current, role: e.target.value }))}
+                  >
+                    <option value="student">Etudiant</option>
+                    <option value="teacher">Enseignant</option>
+                    <option value="admin">Administrateur</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Nouveau mot de passe</label>
+                  <input
+                    type="password"
+                    value={editUserForm.password}
+                    onChange={e => setEditUserForm(current => ({ ...current, password: e.target.value }))}
+                    placeholder="Laisser vide pour ne pas changer"
+                  />
+                </div>
+              </div>
+
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={editUserForm.enabled}
+                  onChange={e => setEditUserForm(current => ({ ...current, enabled: e.target.checked }))}
+                />
+                <span>Compte actif</span>
+              </label>
+
+              <div className="modal-actions">
+                <button type="submit" className="btn btn-primary">Enregistrer</button>
+                <button type="button" className="btn btn-outline" onClick={closeEditModal}>Annuler</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -498,6 +721,10 @@ function fileIcon(filename) {
   const ext = filename?.split('.').pop()?.toLowerCase()
   const icons = { pdf: 'PDF', docx: 'DOC', pptx: 'PPT', xlsx: 'XLS', jpg: 'IMG', jpeg: 'IMG', png: 'IMG', txt: 'TXT' }
   return icons[ext] || 'FILE'
+}
+
+function isPdfFile(filename) {
+  return filename?.toLowerCase().endsWith('.pdf')
 }
 
 function formatDate(dateStr) {

@@ -1,7 +1,7 @@
 from minio import Minio
 import os
 import logging
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -11,8 +11,6 @@ def _default_minio_public_host() -> str:
     minio_public_port = os.getenv("MINIO_PUBLIC_PORT", "9000")
     parsed = urlparse(public_base_url)
     hostname = parsed.hostname or "localhost"
-    if hostname in {"localhost", "127.0.0.1"}:
-        hostname = "host.docker.internal"
     return f"{hostname}:{minio_public_port}"
 
 
@@ -24,7 +22,6 @@ minio_secure = os.getenv("MINIO_SECURE", "False").lower() == "true"
 BUCKET = os.getenv("MINIO_BUCKET", "course-files")
 
 client = None
-public_client = None
 
 
 def get_client():
@@ -47,21 +44,17 @@ def get_client():
         raise
 
 
-def get_public_client():
-    global public_client
-
-    if public_client is not None:
-        return public_client
-
-    try:
-        public_client = Minio(
-            minio_public_host,
-            access_key=minio_access_key,
-            secret_key=minio_secret_key,
-            secure=minio_secure,
+def to_public_url(url: str) -> str:
+    parsed = urlparse(url)
+    public_netloc = minio_public_host
+    public_scheme = "https" if minio_secure else "http"
+    return urlunparse(
+        (
+            public_scheme,
+            public_netloc,
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
         )
-        logger.info(f"MinIO public client initialized for {minio_public_host}")
-        return public_client
-    except Exception as e:
-        logger.error(f"Failed to initialize public MinIO client: {str(e)}")
-        raise
+    )

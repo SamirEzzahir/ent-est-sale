@@ -1,10 +1,13 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from .cassandra_client import get_session
-from .minio_client import get_public_client, get_client, BUCKET
+from .minio_client import get_client, BUCKET
 from .auth import get_current_user, require_teacher_or_admin
-from datetime import timedelta
 import logging
+from urllib.parse import quote
+import mimetypes
+import os
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -50,6 +53,30 @@ def _ensure_manage_permission(user: dict, row) -> None:
         return
     raise HTTPException(status_code=403, detail="You can only manage your own resources")
 
+
+def _public_base_url(request: Request) -> str:
+    configured = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+    if configured:
+        return configured
+    return str(request.base_url).rstrip("/")
+
+
+def _download_url(request: Request, file_id: str, disposition: str) -> str:
+    base = _public_base_url(request)
+    return f"{base}/api/download/files/{file_id}/content?disposition={disposition}"
+
+
+def _iter_object(response, chunk_size: int = 64 * 1024):
+    try:
+        while True:
+            chunk = response.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        response.close()
+        response.release_conn()
+
 @router.get("/files")
 def list_files(user: dict = Depends(get_current_user)):
     """List all uploaded files (metadata from Cassandra)."""
@@ -77,26 +104,61 @@ def get_file(file_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.get("/files/{file_id}/download")
-def download_file(file_id: str, user: dict = Depends(get_current_user)):
-    """Generate a secure presigned MinIO URL for downloading a file."""
+def download_file(
+    request: Request,
+    file_id: str,
+    disposition: str = Query(default="attachment", pattern="^(attachment|inline)$"),
+    user: dict = Depends(get_current_user),
+):
+    """Return a backend URL for downloading or previewing a file."""
     try:
         session = get_session()
         row = _get_file_row(session, file_id)
-
-        # minio_path is stored as "bucket/object_key"
-        object_key = _extract_object_key(row.minio_path)
-
-        minio_client = get_public_client()
-        url = minio_client.presigned_get_object(
-            BUCKET, object_key, expires=timedelta(hours=1)
-        )
         logger.info(f"Generated presigned URL for file {file_id} by user {user['username']}")
-        return {"download_url": url, "filename": row.filename, "expires_in": "1 hour"}
+        return {
+            "download_url": _download_url(request, file_id, disposition),
+            "filename": row.filename,
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to generate download URL for {file_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate download URL: {str(e)}")
+
+
+@router.get("/files/{file_id}/content")
+def stream_file(
+    file_id: str,
+    disposition: str = Query(default="attachment", pattern="^(attachment|inline)$"),
+    user: dict = Depends(get_current_user),
+):
+    """Stream a file through the backend so browser preview/download works reliably."""
+    try:
+        session = get_session()
+        row = _get_file_row(session, file_id)
+
+        object_key = _extract_object_key(row.minio_path)
+        filename = row.filename or object_key.rsplit("/", 1)[-1]
+        encoded_filename = quote(filename)
+        media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+        minio_client = get_client()
+        response = minio_client.get_object(BUCKET, object_key)
+
+        headers = {
+            "Content-Disposition": f"{disposition}; filename*=UTF-8''{encoded_filename}"
+        }
+        logger.info("Streaming file %s to user %s", file_id, user["username"])
+        return StreamingResponse(
+            _iter_object(response),
+            media_type=media_type,
+            headers=headers,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to stream file {file_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to stream file: {str(e)}")
 
 
 @router.patch("/files/{file_id}")
