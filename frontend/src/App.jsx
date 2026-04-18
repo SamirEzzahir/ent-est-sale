@@ -6,6 +6,7 @@ const API = {
   upload: '/api/upload',
   download: '/api/download',
   admin: '/api/admin',
+  ai: '/api/ai',
 }
 
 function authHeaders(token) {
@@ -494,6 +495,208 @@ function AdminView({ token }) {
   )
 }
 
+function AssistantView({ session }) {
+  const token = session.access_token
+  const [question, setQuestion] = useState('')
+  const [selectedFileId, setSelectedFileId] = useState('')
+  const [files, setFiles] = useState([])
+  const [messages, setMessages] = useState([])
+  const [status, setStatus] = useState({ loading: true, sending: false, error: '', info: '' })
+  const [health, setHealth] = useState(null)
+
+  useEffect(() => {
+    async function loadAssistantContext() {
+      try {
+        const [filesRes, healthRes] = await Promise.all([
+          fetch(`${API.ai}/context/files`, { headers: authHeaders(token) }),
+          fetch(`${API.ai}/health`, { headers: authHeaders(token) }),
+        ])
+
+        const filesData = await readResponseData(filesRes)
+        const healthData = await readResponseData(healthRes)
+
+        if (!filesRes.ok) throw new Error(filesData.detail || 'Impossible de charger le contexte IA')
+        if (!healthRes.ok) throw new Error(healthData.detail || "Impossible d'obtenir l'etat du service IA")
+
+        setFiles(filesData.files || [])
+        setHealth(healthData)
+        setStatus(current => ({ ...current, loading: false, error: '' }))
+      } catch (err) {
+        setStatus(current => ({ ...current, loading: false, error: err.message }))
+      }
+    }
+
+    loadAssistantContext()
+  }, [token])
+
+  async function handleAsk(e) {
+    e.preventDefault()
+    const trimmedQuestion = question.trim()
+    if (!trimmedQuestion) return
+
+    const selectedFile = files.find(file => file.id === selectedFileId)
+    const selectedResourceLabel = selectedFile ? `${selectedFile.course_name} - ${selectedFile.filename}` : ''
+
+    setMessages(current => [
+      ...current,
+      {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        text: trimmedQuestion,
+        meta: selectedResourceLabel ? `Ressource ciblee: ${selectedResourceLabel}` : '',
+      },
+    ])
+    setQuestion('')
+
+    setStatus(current => ({ ...current, sending: true, error: '', info: '' }))
+    try {
+      const res = await fetch(`${API.ai}/chat`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({
+          message: trimmedQuestion,
+          file_id: selectedFileId || null,
+        }),
+      })
+      const data = await readResponseData(res)
+      if (!res.ok) throw new Error(data.detail || "Echec de la requete vers l'assistant")
+      setMessages(current => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          text: data.answer || '',
+          meta: data.provider === 'fallback'
+            ? 'Mode MVP de secours'
+            : `Microservice 5 via ${data.provider || 'ollama'}`,
+        },
+      ])
+      setStatus(current => ({
+        ...current,
+        sending: false,
+        info: data.provider === 'fallback'
+          ? 'Reponse generee en mode MVP de secours car Ollama nest pas encore pret.'
+          : 'Reponse generee par Ollama.',
+      }))
+    } catch (err) {
+      setStatus(current => ({ ...current, sending: false, error: err.message }))
+    }
+  }
+
+  function usePrompt(text) {
+    setQuestion(text)
+  }
+
+  return (
+    <div className="view-container">
+      <div className="assistant-header">
+        <div>
+          <h2>Assistant IA</h2>
+          <p className="subtitle">Chatbot separe connecte au Microservice 5 pour les questions generales et les ressources de cours.</p>
+        </div>
+        {health && (
+          <div className="assistant-status-card">
+            <strong>Mode</strong>
+            <span>{health.ollama_models?.length ? `Ollama (${health.ollama_model})` : 'MVP fallback'}</span>
+            <small>{health.fallback_enabled ? 'Fallback actif' : 'Fallback desactive'}</small>
+          </div>
+        )}
+      </div>
+
+      {status.error && <div className="alert alert-error">{status.error}</div>}
+      {status.info && <div className="alert alert-info">{status.info}</div>}
+
+      <div className="assistant-grid">
+        <div className="assistant-panel">
+          <h3>Nouvelle question</h3>
+          <form onSubmit={handleAsk}>
+            <div className="form-group">
+              <label>Ressource ciblee (optionnel)</label>
+              <select value={selectedFileId} onChange={e => setSelectedFileId(e.target.value)} disabled={status.loading}>
+                <option value="">Aucune ressource specifique</option>
+                {files.map(file => (
+                  <option key={file.id} value={file.id}>
+                    {file.course_name} - {file.filename}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Votre question</label>
+              <textarea
+                className="assistant-textarea"
+                value={question}
+                onChange={e => setQuestion(e.target.value)}
+                placeholder="Ex: Quels cours sont disponibles pour moi ?"
+                rows={6}
+              />
+            </div>
+            <div className="assistant-actions">
+              <button type="submit" className="btn btn-primary" disabled={status.loading || status.sending || !question.trim()}>
+                {status.sending ? 'Envoi en cours...' : "Demander a l'assistant"}
+              </button>
+            </div>
+          </form>
+
+          <div className="assistant-suggestions">
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => usePrompt('Quels cours sont disponibles pour moi ?')}>
+              Cours disponibles
+            </button>
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => usePrompt('Propose-moi comment exploiter au mieux les ressources existantes.')}>
+              Conseils d'utilisation
+            </button>
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => usePrompt('Resume les informations connues sur cette ressource.')}>
+              Resume metadata
+            </button>
+          </div>
+
+          <div className="assistant-context">
+            <strong>Ressources detectees:</strong> {files.length}
+          </div>
+        </div>
+
+        <div className="assistant-panel">
+          <div className="assistant-chat-header">
+            <div>
+              <h3>Conversation</h3>
+              <p>Le chatbot suit les regles du MVP documente: questions generales, contexte utilisateur, et metadonnees des ressources.</p>
+            </div>
+            <span className="assistant-chat-badge">Microservice 5</span>
+          </div>
+          {status.loading && <div className="loading">Chargement du contexte IA...</div>}
+          {!status.loading && !messages.length && (
+            <div className="assistant-answer assistant-answer-empty">
+              Aucune conversation pour l'instant. Envoyez un message pour tester le chatbot.
+            </div>
+          )}
+          {!!messages.length && (
+            <div className="assistant-thread">
+              {messages.map(message => (
+                <article
+                  key={message.id}
+                  className={`assistant-message assistant-message-${message.role}`}
+                >
+                  <div className="assistant-message-label">
+                    {message.role === 'user' ? 'Vous' : 'Assistant IA'}
+                  </div>
+                  {message.meta && <div className="assistant-provider">{message.meta}</div>}
+                  <p>{message.text}</p>
+                </article>
+              ))}
+              {status.sending && (
+                <div className="assistant-message assistant-message-assistant assistant-message-pending">
+                  <div className="assistant-message-label">Assistant IA</div>
+                  <p>Generation de la reponse en cours...</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function fileIcon(filename) {
   const ext = filename?.split('.').pop()?.toLowerCase()
   const icons = { pdf: 'PDF', docx: 'DOC', pptx: 'PPT', xlsx: 'XLS', jpg: 'IMG', jpeg: 'IMG', png: 'IMG', txt: 'TXT' }
@@ -509,9 +712,9 @@ function Dashboard({ session, onLogout }) {
   const [activeTab, setActiveTab] = useState(session.role === 'admin' ? 'admin' : session.role === 'teacher' ? 'upload' : 'courses')
 
   const tabs = {
-    student: [{ id: 'courses', label: 'Cours' }],
-    teacher: [{ id: 'courses', label: 'Cours' }, { id: 'upload', label: 'Deposer un fichier' }],
-    admin: [{ id: 'courses', label: 'Cours' }, { id: 'upload', label: 'Deposer' }, { id: 'admin', label: 'Utilisateurs' }],
+    student: [{ id: 'courses', label: 'Cours' }, { id: 'assistant', label: 'Assistant IA' }],
+    teacher: [{ id: 'courses', label: 'Cours' }, { id: 'upload', label: 'Deposer un fichier' }, { id: 'assistant', label: 'Assistant IA' }],
+    admin: [{ id: 'courses', label: 'Cours' }, { id: 'upload', label: 'Deposer' }, { id: 'admin', label: 'Utilisateurs' }, { id: 'assistant', label: 'Assistant IA' }],
   }
 
   const currentTabs = tabs[session.role] || tabs.student
@@ -534,6 +737,7 @@ function Dashboard({ session, onLogout }) {
         {activeTab === 'courses' && <StudentView session={session} />}
         {activeTab === 'upload' && <TeacherView token={session.access_token} />}
         {activeTab === 'admin' && <AdminView token={session.access_token} />}
+        {activeTab === 'assistant' && <AssistantView session={session} />}
       </main>
     </div>
   )
@@ -580,16 +784,16 @@ function AuthCallback({ onLogin }) {
 
 export default function App() {
   const [session, setSession] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('ent_session')) } catch { return null }
+    try { return JSON.parse(sessionStorage.getItem('ent_session')) } catch { return null }
   })
 
   function handleLogin(data) {
-    localStorage.setItem('ent_session', JSON.stringify(data))
+    sessionStorage.setItem('ent_session', JSON.stringify(data))
     setSession(data)
   }
 
   async function handleLogout() {
-    localStorage.removeItem('ent_session')
+    sessionStorage.removeItem('ent_session')
     setSession(null)
     try {
       const postLogoutRedirectUri = `${window.location.origin}/`
