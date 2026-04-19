@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Optional
 import logging
 
@@ -23,10 +24,12 @@ AVAILABLE_ROLES = ["admin", "teacher", "student"]
 class CreateUserRequest(BaseModel):
     username: str
     password: str
+    confirm_password: str
     role: str
     email: Optional[EmailStr] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    birth_date: Optional[date] = None
 
 
 class UpdateRoleRequest(BaseModel):
@@ -34,11 +37,12 @@ class UpdateRoleRequest(BaseModel):
 
 
 class UpdateUserRequest(BaseModel):
-    username: str
+    username: Optional[str] = None
     role: str
     email: Optional[EmailStr] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    birth_date: Optional[date] = None
     enabled: bool = True
     password: Optional[str] = None
 
@@ -63,6 +67,8 @@ def list_users(admin: dict = Depends(require_admin)):
 def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
     if body.role not in AVAILABLE_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Choose from: {AVAILABLE_ROLES}")
+    if body.password != body.confirm_password:
+        raise HTTPException(status_code=400, detail="Password confirmation does not match")
     username = _validate_username(body.username)
 
     user = create_keycloak_user(
@@ -72,6 +78,7 @@ def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
         email=body.email,
         first_name=body.first_name,
         last_name=body.last_name,
+        birth_date=body.birth_date.isoformat() if body.birth_date else None,
     )
     logger.info("Admin %s created user %s with role %s", admin["username"], username, body.role)
     return user
@@ -98,19 +105,21 @@ def update_role(user_id: str, body: UpdateRoleRequest, admin: dict = Depends(req
 def update_user(user_id: str, body: UpdateUserRequest, admin: dict = Depends(require_admin)):
     if body.role not in AVAILABLE_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Choose from: {AVAILABLE_ROLES}")
-    username = _validate_username(body.username)
 
     target_user = get_keycloak_user(user_id)
     if target_user["username"] == admin["username"] and not body.enabled:
         raise HTTPException(status_code=400, detail="Cannot disable your own account")
 
+    if body.username is not None:
+        _validate_username(body.username)
+
     user = update_keycloak_user(
         user_id,
-        username=username,
         role=body.role,
         email=body.email,
         first_name=(body.first_name or "").strip(),
         last_name=(body.last_name or "").strip(),
+        birth_date=body.birth_date.isoformat() if body.birth_date else None,
         enabled=body.enabled,
         password=(body.password or "").strip() or None,
     )

@@ -13,6 +13,22 @@ KEYCLOAK_ADMIN = os.getenv("KEYCLOAK_ADMIN", "admin")
 KEYCLOAK_ADMIN_PASSWORD = os.getenv("KEYCLOAK_ADMIN_PASSWORD", "admin")
 
 
+def _raise_keycloak_error(response: httpx.Response, fallback_detail: str) -> None:
+    detail = fallback_detail
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            detail = payload.get("errorMessage") or payload.get("error_description") or payload.get("detail") or detail
+        elif isinstance(payload, str) and payload.strip():
+            detail = payload.strip()
+    except ValueError:
+        body = response.text.strip()
+        if body:
+            detail = body
+
+    raise HTTPException(status_code=response.status_code, detail=detail)
+
+
 def _admin_headers() -> dict:
     token_url = (
         f"{KEYCLOAK_URL}/realms/{KEYCLOAK_ADMIN_REALM}/protocol/openid-connect/token"
@@ -52,12 +68,15 @@ def _extract_role(user: dict) -> str:
 
 
 def _normalize_user(user: dict) -> dict:
+    attributes = user.get("attributes") or {}
+    birth_date_values = attributes.get("birth_date") or []
     return {
         "id": user["id"],
         "username": user["username"],
         "email": user.get("email", ""),
         "first_name": user.get("firstName", ""),
         "last_name": user.get("lastName", ""),
+        "birth_date": birth_date_values[0] if birth_date_values else "",
         "enabled": user.get("enabled", True),
         "role": _extract_role(user),
     }
@@ -68,21 +87,24 @@ def _get_role_representation(role_name: str) -> dict:
     response = httpx.get(url, headers=_admin_headers(), timeout=10)
     if response.status_code == 404:
         raise HTTPException(status_code=404, detail=f"Role '{role_name}' not found in Keycloak")
-    response.raise_for_status()
+    if response.is_error:
+        _raise_keycloak_error(response, "Unable to retrieve Keycloak role")
     return response.json()
 
 
 def _get_user_role_mappings(user_id: str) -> list[dict]:
     url = f"{_admin_base_url()}/users/{user_id}/role-mappings/realm"
     response = httpx.get(url, headers=_admin_headers(), timeout=10)
-    response.raise_for_status()
+    if response.is_error:
+        _raise_keycloak_error(response, "Unable to retrieve user roles from Keycloak")
     return response.json()
 
 
 def list_keycloak_users() -> list[dict]:
     url = f"{_admin_base_url()}/users"
     response = httpx.get(url, headers=_admin_headers(), timeout=10)
-    response.raise_for_status()
+    if response.is_error:
+        _raise_keycloak_error(response, "Unable to list users from Keycloak")
     users = response.json()
 
     normalized_users = []
@@ -99,7 +121,8 @@ def get_keycloak_user(user_id: str) -> dict:
     response = httpx.get(url, headers=_admin_headers(), timeout=10)
     if response.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
-    response.raise_for_status()
+    if response.is_error:
+        _raise_keycloak_error(response, "Unable to retrieve user from Keycloak")
     user = response.json()
     user["realmRoles"] = [role["name"] for role in _get_user_role_mappings(user_id)]
     return _normalize_user(user)
@@ -113,6 +136,7 @@ def create_keycloak_user(
     email: Optional[str] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
+    birth_date: Optional[str] = None,
 ) -> dict:
     url = f"{_admin_base_url()}/users"
     payload = {
@@ -124,12 +148,16 @@ def create_keycloak_user(
         "credentials": [
             {"type": "password", "value": password, "temporary": False}
         ],
+        "attributes": {
+            "birth_date": [birth_date.strip()] if birth_date and birth_date.strip() else []
+        },
     }
 
     response = httpx.post(url, headers=_admin_headers(), json=payload, timeout=10)
     if response.status_code == 409:
         raise HTTPException(status_code=409, detail="Username already exists")
-    response.raise_for_status()
+    if response.is_error:
+        _raise_keycloak_error(response, "Unable to create user in Keycloak")
 
     user_lookup = httpx.get(
         f"{_admin_base_url()}/users",
@@ -137,7 +165,8 @@ def create_keycloak_user(
         params={"username": username, "exact": "true"},
         timeout=10,
     )
-    user_lookup.raise_for_status()
+    if user_lookup.is_error:
+        _raise_keycloak_error(user_lookup, "Created user could not be queried from Keycloak")
     users = user_lookup.json()
     if not users:
         raise HTTPException(status_code=500, detail="Created user could not be retrieved from Keycloak")
@@ -150,21 +179,25 @@ def create_keycloak_user(
 def update_keycloak_user(
     user_id: str,
     *,
-    username: str,
     role: str,
     email: Optional[str] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
+    birth_date: Optional[str] = None,
     enabled: bool = True,
     password: Optional[str] = None,
 ) -> dict:
     payload = {
-        "username": username,
-        "email": email or "",
         "enabled": enabled,
         "firstName": first_name or "",
         "lastName": last_name or "",
+        "attributes": {
+            "birth_date": [birth_date.strip()] if birth_date and birth_date.strip() else []
+        },
     }
+    if email and email.strip():
+        payload["email"] = email.strip()
+
     response = httpx.put(
         f"{_admin_base_url()}/users/{user_id}",
         headers=_admin_headers(),
@@ -175,7 +208,8 @@ def update_keycloak_user(
         raise HTTPException(status_code=404, detail="User not found")
     if response.status_code == 409:
         raise HTTPException(status_code=409, detail="Username already exists")
-    response.raise_for_status()
+    if response.is_error:
+        _raise_keycloak_error(response, "Unable to update user in Keycloak")
 
     if password:
         password_response = httpx.put(
@@ -184,7 +218,8 @@ def update_keycloak_user(
             json={"type": "password", "value": password, "temporary": False},
             timeout=10,
         )
-        password_response.raise_for_status()
+        if password_response.is_error:
+            _raise_keycloak_error(password_response, "Unable to reset user password in Keycloak")
 
     set_user_realm_role(user_id, role)
     return get_keycloak_user(user_id)
@@ -200,7 +235,8 @@ def set_user_realm_role(user_id: str, role_name: str) -> dict:
             json=current_roles,
             timeout=10,
         )
-        remove_response.raise_for_status()
+        if remove_response.is_error:
+            _raise_keycloak_error(remove_response, "Unable to remove existing user roles")
 
     role_representation = _get_role_representation(role_name)
     assign_response = httpx.post(
@@ -209,7 +245,8 @@ def set_user_realm_role(user_id: str, role_name: str) -> dict:
         json=[role_representation],
         timeout=10,
     )
-    assign_response.raise_for_status()
+    if assign_response.is_error:
+        _raise_keycloak_error(assign_response, "Unable to assign user role")
     return get_keycloak_user(user_id)
 
 
@@ -221,4 +258,5 @@ def delete_keycloak_user(user_id: str) -> None:
     )
     if response.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
-    response.raise_for_status()
+    if response.is_error:
+        _raise_keycloak_error(response, "Unable to delete user from Keycloak")
