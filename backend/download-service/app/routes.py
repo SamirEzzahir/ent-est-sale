@@ -35,6 +35,28 @@ def _extract_object_key(minio_path: str) -> str:
     return minio_path
 
 
+def _split_extension(filename: str) -> tuple[str, str]:
+    if "." not in filename or filename.startswith("."):
+        return filename, ""
+    basename, extension = filename.rsplit(".", 1)
+    return basename, f".{extension}"
+
+
+def _normalize_updated_filename(current_filename: str, requested_filename: str) -> str:
+    current_name, current_extension = _split_extension(current_filename)
+    requested_name, requested_extension = _split_extension(requested_filename)
+
+    if not requested_name.strip():
+        raise HTTPException(status_code=400, detail="Filename cannot be empty")
+
+    if current_extension:
+        if requested_extension and requested_extension.lower() != current_extension.lower():
+            raise HTTPException(status_code=400, detail="File extension cannot be changed")
+        return f"{requested_name.strip()}{current_extension}"
+
+    return requested_filename.strip()
+
+
 def _get_file_row(session, file_id: str):
     from uuid import UUID
     rows = session.execute(
@@ -177,7 +199,11 @@ def update_file(
         row = _get_file_row(session, file_id)
         _ensure_manage_permission(user, row)
 
-        filename = body.filename.strip() if body.filename is not None else row.filename
+        filename = (
+            _normalize_updated_filename(row.filename, body.filename)
+            if body.filename is not None
+            else row.filename
+        )
         course_name = body.course_name.strip()
 
         session.execute(
