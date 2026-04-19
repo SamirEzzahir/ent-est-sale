@@ -1,0 +1,130 @@
+{
+  "realm": "ent-sale",
+  "enabled": true,
+  "displayName": "ENT Sale",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "ENT administrator"
+      },
+      {
+        "name": "TEACHER",
+        "description": "ENT teacher"
+      },
+      {
+        "name": "STUDENT",
+        "description": "ENT student"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "ent-frontend",
+      "name": "ENT Frontend",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "fullScopeAllowed": true
+    },
+    {
+      "clientId": "ent-registration",
+      "name": "ENT Registration Service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "ent-registration-secret",
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-ent-registration",
+      "enabled": true,
+      "serviceAccountClientId": "ent-registration",
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users"
+        ]
+      }
+    },
+    {
+      "username": "student@estsale.ma",
+      "email": "student@estsale.ma",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Student",
+      "realmRoles": [
+        "STUDENT"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "ChangeMe123!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "teacher@estsale.ma",
+      "email": "teacher@estsale.ma",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Teacher",
+      "realmRoles": [
+        "TEACHER"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "ChangeMe123!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "admin@estsale.ma",
+      "email": "admin@estsale.ma",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "realmRoles": [
+        "ADMIN"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "ChangeMe123!",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
