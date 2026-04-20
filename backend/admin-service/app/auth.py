@@ -3,7 +3,7 @@ import os
 
 from fastapi import Depends, Header, HTTPException
 from jose import JWTError, jwt
-
+ 
 logger = logging.getLogger(__name__)
 
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://keycloak:8080")
