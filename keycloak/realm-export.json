@@ -82,6 +82,16 @@
       "emailVerified": true,
       "credentials": [{ "type": "password", "value": "student123", "temporary": false }],
       "realmRoles": ["student"]
+    },
+    {
+      "username": "samir",
+      "email": "samir@est-sale.ma",
+      "firstName": "Samir",
+      "lastName": "Ez-zahir",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "sa123456+", "temporary": false }],
+      "realmRoles": ["admin"]
     }
   ]
 }

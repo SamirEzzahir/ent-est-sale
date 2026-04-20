@@ -1,0 +1,8 @@
+docker-workflow
+git
+github
+pipeline-stage-view
+credentials-binding
+ssh-agent
+ws-cleanup
+workflow-aggregator

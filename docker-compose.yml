@@ -35,8 +35,8 @@ services:
   core-auth:
     build: ./backend/core-auth
     container_name: core-auth
-    ports:
-      - "8001:8001"
+    #ports:
+     # - "8001:8001"
     env_file:
       - .env
     depends_on:
@@ -51,8 +51,8 @@ services:
   upload-service:
     build: ./backend/upload-service
     container_name: upload-service
-    ports:
-      - "8002:8002"
+   # ports:
+    #  - "8002:8002"
     env_file:
       - .env
     depends_on:
@@ -69,8 +69,8 @@ services:
   download-service:
     build: ./backend/download-service
     container_name: download-service
-    ports:
-      - "8003:8003"
+   # ports:
+   #   - "8003:8003"
     env_file:
       - .env
     depends_on:
@@ -87,8 +87,8 @@ services:
   admin-service:
     build: ./backend/admin-service
     container_name: admin-service
-    ports:
-      - "8004:8004"
+   # ports:
+    #  - "8004:8004"
     env_file:
       - .env
     networks:
@@ -101,8 +101,8 @@ services:
     build: ./backend/ai-assistant-service
     container_name: ai-assistant-service
     restart: unless-stopped
-    ports:
-      - "8005:8005"
+   # ports:
+   #   - "8005:8005"
     env_file:
       - .env
     depends_on:
@@ -111,6 +111,96 @@ services:
       download-service:
         condition: service_started
       ollama:
+        condition: service_started
+    networks:
+      - app-network
+
+  # =====================
+  # COURSE SERVICE
+  # =====================
+  course-service:
+    build: ./backend/course-service
+    container_name: course-service
+   # ports:
+   #  - "8006:8006"
+    env_file:
+      - .env
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      core-auth:
+        condition: service_started
+    networks:
+      - app-network
+
+  # =====================
+  # ASSIGNMENT SERVICE
+  # =====================
+  assignment-service:
+    build: ./backend/assignment-service
+    container_name: assignment-service
+   # ports:
+   #   - "8007:8007"
+    env_file:
+      - .env
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      core-auth:
+        condition: service_started
+    networks:
+      - app-network
+
+  # =====================
+  # GRADE SERVICE
+  # =====================
+  grade-service:
+    build: ./backend/grade-service
+    container_name: grade-service
+   # ports:
+    #  - "8008:8008"
+    env_file:
+      - .env
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      core-auth:
+        condition: service_started
+    networks:
+      - app-network
+
+  # =====================
+  # NOTIFICATION SERVICE
+  # =====================
+  notification-service:
+    build: ./backend/notification-service
+    container_name: notification-service
+   # ports:
+   #   - "8009:8009"
+    env_file:
+      - .env
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      core-auth:
+        condition: service_started
+    networks:
+      - app-network
+
+  # =====================
+  # SCHEDULE SERVICE
+  # =====================
+  schedule-service:
+    build: ./backend/schedule-service
+    container_name: schedule-service
+   # ports:
+   #   - "8010:8010"
+    env_file:
+      - .env
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      core-auth:
         condition: service_started
     networks:
       - app-network
