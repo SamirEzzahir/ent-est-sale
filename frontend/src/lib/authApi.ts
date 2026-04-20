@@ -186,6 +186,61 @@ function authHeader() {
   return { Authorization: `Bearer ${token}` }
 }
 
+export async function adminListUsersRequest(): Promise<any[]> {
+  const response = await fetch(`${resolveApiBase(import.meta.env.VITE_ADMIN_API_URL as string | undefined, '/api/admin')}/users`, {
+    method: 'GET',
+    headers: authHeader(),
+  })
+  const text = await readResponseText(response)
+  if (!response.ok) {
+    throw new Error(parseApiError(text, response.status))
+  }
+  return text ? (JSON.parse(text) as any[]) : []
+}
+
+export async function adminDeleteUserRequest(userId: string): Promise<void> {
+  const response = await fetch(`${resolveApiBase(import.meta.env.VITE_ADMIN_API_URL as string | undefined, '/api/admin')}/users/${userId}`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  })
+  const text = await readResponseText(response)
+  if (!response.ok) {
+    throw new Error(parseApiError(text, response.status))
+  }
+}
+
+export interface AdminUpdateUserPayload {
+  email?: string
+  first_name?: string
+  last_name?: string
+  role: AppRealmRole
+  enabled?: boolean
+}
+
+export async function adminUpdateUserRequest(userId: string, payload: AdminUpdateUserPayload): Promise<any> {
+  const body: Record<string, any> = {
+    role: payload.role,
+  }
+  if (payload.email) body.email = payload.email.trim()
+  if (payload.first_name) body.first_name = payload.first_name.trim()
+  if (payload.last_name) body.last_name = payload.last_name.trim()
+  if (payload.enabled !== undefined) body.enabled = payload.enabled
+
+  const response = await fetch(`${resolveApiBase(import.meta.env.VITE_ADMIN_API_URL as string | undefined, '/api/admin')}/users/${userId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeader(),
+    },
+    body: JSON.stringify(body),
+  })
+  const text = await readResponseText(response)
+  if (!response.ok) {
+    throw new Error(parseApiError(text, response.status))
+  }
+  return text ? (JSON.parse(text) as any) : {}
+}
+
 export async function adminCreateUserRequest(payload: AdminCreateUserPayload): Promise<{ id?: string; username?: string; message?: string }> {
   const body: Record<string, string> = {
     username: payload.username.trim(),

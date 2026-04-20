@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Bell, BookOpen, CalendarClock, FileUp, Headset, NotebookPen, ShieldCheck, Wrench } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
@@ -10,7 +10,11 @@ import { listRemoteFiles, getFileBlob, type RemoteFileItem } from '../lib/downlo
 import { uploadCourseFile } from '../lib/uploadApi'
 import {
   adminCreateUserRequest,
+  adminListUsersRequest,
+  adminDeleteUserRequest,
+  adminUpdateUserRequest,
   type AppRealmRole,
+  type AdminUpdateUserPayload,
 } from '../lib/authApi'
 
 function RoleScopeNote({ module }: { module: string }) {
@@ -759,22 +763,230 @@ export function ThreadPage() {
 }
 
 export function AssistantPage() {
+  const { currentRole } = useAppContext()
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; provider?: string }>>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
+  const [files, setFiles] = useState<any[]>([])
+  const [health, setHealth] = useState<any>(null)
+  const chatWindowRef = useRef<HTMLDivElement>(null)
+
+  // Load context files and health on mount
+  useEffect(() => {
+    const loadContext = async () => {
+      try {
+        const { aiHealthCheck, aiGetContextFiles } = await import('../lib/aiApi')
+        const [healthData, filesData] = await Promise.all([aiHealthCheck().catch(() => null), aiGetContextFiles().catch(() => [])])
+        setHealth(healthData)
+        setFiles(Array.isArray(filesData) ? filesData : [])
+      } catch (err) {
+        console.warn('Could not load AI context:', err)
+      }
+    }
+    loadContext()
+  }, [])
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    if (chatWindowRef.current) {
+      chatWindowRef.current.scrollTop = chatWindowRef.current.scrollHeight
+    }
+  }, [messages])
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!input.trim() || loading) return
+
+    const userMessage = input.trim()
+    setInput('')
+    setError(null)
+    setMessages((prev) => [...prev, { role: 'user', content: userMessage }])
+    setLoading(true)
+
+    try {
+      const { aiChat } = await import('../lib/aiApi')
+      const response = await aiChat(userMessage, selectedFileId || undefined)
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: response.answer,
+          provider: response.provider,
+        },
+      ])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la requete')
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Erreur: ${err instanceof Error ? err.message : 'Impossible de contacter le service IA'}`,
+        },
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <>
       <PageHeader title="Assistant IA et support" subtitle="Assistance ENT intelligente et co-navigation." />
       <RoleScopeNote module="assistant" />
-      <Card>
-        <div className="chat-window">
-          <p><strong>Assistant:</strong> Bonjour, je peux vous aider pour les cours, examens et demarches.</p>
-          <p><strong>Vous:</strong> Comment acceder aux ressources du module Frontend ?</p>
+
+      {error && <div className="alert" style={{ color: 'var(--color-error)' }} role="alert">{error}</div>}
+
+      <Card title="Chat avec l'assistant IA">
+        <div
+          ref={chatWindowRef}
+          className="chat-window"
+          style={{
+            height: '400px',
+            overflowY: 'auto',
+            border: '1px solid var(--color-border)',
+            borderRadius: '8px',
+            padding: '16px',
+            marginBottom: '16px',
+            backgroundColor: 'var(--color-bg)',
+          }}
+        >
+          {messages.length === 0 && (
+            <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '40px 0' }}>
+              <p>Aucun message pour le moment.</p>
+              <p style={{ fontSize: '0.9em' }}>Commencez une conversation en posant une question ci-dessous.</p>
+            </div>
+          )}
+          {messages.map((msg, idx) => (
+            <div key={idx} style={{ marginBottom: '12px' }}>
+              <p style={{ margin: '0 0 4px 0', fontWeight: 500 }}>
+                <strong>{msg.role === 'user' ? 'Vous' : 'Assistant IA'}</strong>
+                {msg.provider && <span style={{ fontSize: '0.8em', color: 'var(--color-text-muted)', marginLeft: '8px' }}>({msg.provider})</span>}
+              </p>
+              <p style={{ margin: 0, color: msg.role === 'user' ? 'var(--color-text)' : 'var(--color-text)' }}>
+                {msg.content}
+              </p>
+            </div>
+          ))}
+          {loading && (
+            <div style={{ textAlign: 'center', padding: '8px', color: 'var(--color-text-muted)' }}>
+              <p>L'assistant est en train de traiter votre question...</p>
+            </div>
+          )}
         </div>
-        <div className="assistant-actions"><button className="ghost-btn">Envoyez-nous un message</button><button className="primary-btn">Rejoindre la co-navigation</button></div>
+
+        <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Posez une question sur vos cours, examens, ou demarches..."
+            disabled={loading}
+            style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid var(--color-border)' }}
+          />
+          <button type="submit" className="primary-btn" disabled={loading || !input.trim()}>
+            {loading ? 'Envoi...' : 'Envoyer'}
+          </button>
+        </form>
+
+        {files.length > 0 && (
+          <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: 'var(--color-bg-secondary)', borderRadius: '4px' }}>
+            <p style={{ margin: '0 0 8px 0', fontSize: '0.9em', fontWeight: 500 }}>Contextualiser avec un fichier (optionnel):</p>
+            <select
+              value={selectedFileId || ''}
+              onChange={(e) => setSelectedFileId(e.target.value || null)}
+              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--color-border)' }}
+            >
+              <option value="">Aucun fichier selectionne</option>
+              {files.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.filename} (Cours: {f.course_name})
+                </option>
+              ))}
+            </select>
+            {selectedFileId && (
+              <p style={{ margin: '8px 0 0 0', fontSize: '0.85em', color: 'var(--color-text-muted)' }}>
+                ✓ Fichier selectionne - Les reponses tiendront compte de ce contexte
+              </p>
+            )}
+          </div>
+        )}
       </Card>
+
+      <Card title="Etat du service IA">
+        {health ? (
+          <ul className="list">
+            <li className="forum-item">
+              <div>
+                <strong>Service</strong>
+                <span>{health.service}</span>
+              </div>
+              <Badge value={health.status?.toUpperCase()} type="success" />
+            </li>
+            <li className="forum-item">
+              <div>
+                <strong>Modele Ollama</strong>
+                <span>{health.ollama_model || 'Non configure'}</span>
+              </div>
+              <Badge value="Ollama" type="info" />
+            </li>
+            <li className="forum-item">
+              <div>
+                <strong>Modeles disponibles</strong>
+                <span>{health.ollama_models?.length || 0} modele(s)</span>
+              </div>
+              <Badge value={health.ollama_models?.length > 0 ? 'OK' : 'AUCUN'} type={health.ollama_models?.length > 0 ? 'success' : 'warning'} />
+            </li>
+            <li className="forum-item">
+              <div>
+                <strong>Mode fallback</strong>
+                <span>{health.fallback_enabled ? 'Actif (reponses sans Ollama)' : 'Inactif'}</span>
+              </div>
+              <Badge value={health.fallback_enabled ? 'ENABLED' : 'DISABLED'} type="info" />
+            </li>
+          </ul>
+        ) : (
+          <p className="muted">Impossible de charger l'etat du service IA.</p>
+        )}
+      </Card>
+
       <Card title="Conformite IA du projet">
         <ul className="list">
-          <li className="forum-item"><div><strong>Moteur IA cible</strong><span>Ollama en cloud prive EST Sale.</span></div><Badge value="Ollama" type="success" /></li>
-          <li className="forum-item"><div><strong>Modeles</strong><span>Llama 3 8B/70B instruct pour assistant conversationnel.</span></div><Badge value="Llama 3" type="info" /></li>
-          <li className="forum-item"><div><strong>Usage ENT</strong><span>Aide aux cours, examens, demarches et recherche de ressources.</span></div><Badge value="Conversationnel" /></li>
+          <li className="forum-item">
+            <div>
+              <strong>Moteur IA</strong>
+              <span>Ollama en cloud prive EST Sale avec fallback automatique.</span>
+            </div>
+            <Badge value="Ollama" type="success" />
+          </li>
+          <li className="forum-item">
+            <div>
+              <strong>Modeles</strong>
+              <span>Llama 3 8B/70B instruct pour conversations en francais et contextualisees.</span>
+            </div>
+            <Badge value="Llama 3" type="info" />
+          </li>
+          <li className="forum-item">
+            <div>
+              <strong>Contexte</strong>
+              <span>Acces aux ressources disponibles (fichiers de cours) pour contextualiser les reponses.</span>
+            </div>
+            <Badge value="Download API" type="info" />
+          </li>
+          <li className="forum-item">
+            <div>
+              <strong>Authentification</strong>
+              <span>Requerant les tokens JWT Keycloak pour securiser les interactions.</span>
+            </div>
+            <Badge value="JWT" type="success" />
+          </li>
+          <li className="forum-item">
+            <div>
+              <strong>Usage ENT</strong>
+              <span>Aide aux cours, examens, demarches et recherche de ressources pour tous les roles.</span>
+            </div>
+            <Badge value="Conversationnel" type="info" />
+          </li>
         </ul>
       </Card>
     </>
@@ -930,6 +1142,13 @@ export function AdminValidateAccountsPage() {
 
 export function AdminUsersPage() {
   const { currentRole } = useAppContext()
+  const [usersList, setUsersList] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  // Create user form
+  const [showCreate, setShowCreate] = useState(false)
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -937,9 +1156,18 @@ export function AdminUsersPage() {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [role, setRole] = useState<AppRealmRole>('student')
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+
+  // Edit user modal
+  const [editingUser, setEditingUser] = useState<any | null>(null)
+  const [editForm, setEditForm] = useState({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: 'student' as AppRealmRole,
+  })
+  const [editPending, setEditPending] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   if (currentRole !== 'admin') {
     return (
@@ -951,144 +1179,292 @@ export function AdminUsersPage() {
     )
   }
 
+  const loadUsers = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const users = await adminListUsersRequest()
+      setUsersList(Array.isArray(users) ? users : [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Impossible de charger les utilisateurs')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setSuccess(null)
+    if (!username.trim()) {
+      setError('Le nom d utilisateur est obligatoire.')
+      return
+    }
+    if (password !== confirm) {
+      setError('Les mots de passe ne correspondent pas.')
+      return
+    }
+    if (password.length < 8) {
+      setError('Le mot de passe doit contenir au moins 8 caracteres.')
+      return
+    }
+    setPending(true)
+    try {
+      await adminCreateUserRequest({
+        username,
+        password,
+        confirmPassword: confirm,
+        role,
+        email,
+        firstName,
+        lastName,
+      })
+      setSuccess(`Utilisateur ${username} cree avec succes.`)
+      setUsername('')
+      setEmail('')
+      setPassword('')
+      setConfirm('')
+      setFirstName('')
+      setLastName('')
+      setShowCreate(false)
+      await loadUsers()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la creation')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const openEdit = (user: any) => {
+    setEditingUser(user)
+    setEditForm({
+      email: user.email || '',
+      first_name: user.first_name || '',
+      last_name: user.last_name || '',
+      role: user.role || 'student',
+    })
+    setSuccess(null)
+    setError(null)
+  }
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingUser) return
+    setError(null)
+    setSuccess(null)
+    setEditPending(true)
+    try {
+      const payload: AdminUpdateUserPayload = {
+        email: editForm.email || undefined,
+        first_name: editForm.first_name || undefined,
+        last_name: editForm.last_name || undefined,
+        role: editForm.role,
+      }
+      await adminUpdateUserRequest(editingUser.id, payload)
+      setSuccess(`Utilisateur ${editingUser.username} mis a jour.`)
+      setEditingUser(null)
+      await loadUsers()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la mise a jour')
+    } finally {
+      setEditPending(false)
+    }
+  }
+
+  const handleDelete = async (userId: string, username: string) => {
+    if (deleteConfirm !== username) {
+      setDeleteConfirm(username)
+      return
+    }
+    setError(null)
+    setSuccess(null)
+    try {
+      await adminDeleteUserRequest(userId)
+      setSuccess(`Utilisateur ${username} supprime.`)
+      setDeleteConfirm(null)
+      await loadUsers()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la suppression')
+    }
+  }
+
+  const closeEdit = () => {
+    setEditingUser(null)
+    setDeleteConfirm(null)
+  }
+
+  useEffect(() => {
+    loadUsers()
+  }, [])
+
   return (
     <>
-      <PageHeader title="Administration - Utilisateurs" subtitle="Creation de comptes et gestion des roles." />
+      <PageHeader
+        title="Administration - Utilisateurs"
+        subtitle="Creation de comptes et gestion des roles."
+        action={<button className="primary-btn" onClick={() => setShowCreate(!showCreate)}>
+          {showCreate ? 'Annuler' : '+ Nouvel utilisateur'}
+        </button>}
+      />
       <RoleScopeNote module="admin" />
-      <Card title="Creer un compte Keycloak">
-        <p className="muted">
-          Le formulaire envoie maintenant le schema reel attendu par `admin-service`: `username`, `password`,
-          `confirm_password`, `role`, avec options `email`, `first_name` et `last_name`.
-        </p>
-        <form
-          className="stack"
-          onSubmit={async (e) => {
-            e.preventDefault()
-            setError(null)
-            setSuccess(null)
-            if (!username.trim()) {
-              setError('Le nom d utilisateur est obligatoire.')
-              return
-            }
-            if (password !== confirm) {
-              setError('Les mots de passe ne correspondent pas.')
-              return
-            }
-            if (password.length < 8) {
-              setError('Le mot de passe doit contenir au moins 8 caracteres.')
-              return
-            }
-            setPending(true)
-            try {
-              const res = await adminCreateUserRequest({
-                username,
-                password,
-                confirmPassword: confirm,
-                role,
-                email,
-                firstName,
-                lastName,
-              })
-              setSuccess(res.message ?? `Compte cree pour ${res.username ?? username}.`)
-              setUsername('')
-              setEmail('')
-              setPassword('')
-              setConfirm('')
-              setFirstName('')
-              setLastName('')
-            } catch (err) {
-              setError(err instanceof Error ? err.message : 'Creation impossible')
-            } finally {
-              setPending(false)
-            }
-          }}
-        >
-          {error ? (
-            <p className="auth-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          {success ? (
-            <p className="state success" role="status">
-              {success}
-            </p>
-          ) : null}
-          <label className="field">
-            <span>Nom d'utilisateur</span>
-            <input value={username} onChange={(ev) => setUsername(ev.target.value)} placeholder="prenom.nom" required />
-          </label>
-          <div className="grid cols-2">
+
+      {error && <div className="alert" style={{ color: 'var(--color-error)' }} role="alert">{error}</div>}
+      {success && <div className="alert" style={{ color: 'var(--color-success)' }} role="status">{success}</div>}
+
+      {showCreate && (
+        <Card title="Creer un utilisateur">
+          <form className="stack" onSubmit={handleCreate}>
             <label className="field">
-              <span>Prenom</span>
-              <input value={firstName} onChange={(ev) => setFirstName(ev.target.value)} placeholder="Prenom" />
+              <span>Nom d'utilisateur *</span>
+              <input value={username} onChange={(ev) => setUsername(ev.target.value)} placeholder="prenom.nom" required />
             </label>
+            <div className="grid cols-2">
+              <label className="field">
+                <span>Prenom</span>
+                <input value={firstName} onChange={(ev) => setFirstName(ev.target.value)} placeholder="Prenom" />
+              </label>
+              <label className="field">
+                <span>Nom</span>
+                <input value={lastName} onChange={(ev) => setLastName(ev.target.value)} placeholder="Nom" />
+              </label>
+            </div>
             <label className="field">
-              <span>Nom</span>
-              <input value={lastName} onChange={(ev) => setLastName(ev.target.value)} placeholder="Nom" />
+              <span>Email (optionnel)</span>
+              <input type="email" value={email} onChange={(ev) => setEmail(ev.target.value)} placeholder="prenom.nom@estsale.ma" />
             </label>
-          </div>
-          <label className="field">
-            <span>Email institutionnel (optionnel)</span>
-            <input type="email" value={email} onChange={(ev) => setEmail(ev.target.value)} placeholder="prenom.nom@estsale.ma" />
-          </label>
-          <label className="field">
-            <span>Role realm</span>
-            <select value={role} onChange={(ev) => setRole(ev.target.value as AppRealmRole)}>
-              <option value="student">Etudiant</option>
-              <option value="teacher">Enseignant</option>
-              <option value="admin">Administrateur</option>
-            </select>
-          </label>
-          <div className="grid cols-2">
-            <label className="field">
-              <span>Mot de passe (min. 8)</span>
-              <input type="password" value={password} onChange={(ev) => setPassword(ev.target.value)} required minLength={8} />
-            </label>
-            <label className="field">
-              <span>Confirmer</span>
-              <input type="password" value={confirm} onChange={(ev) => setConfirm(ev.target.value)} required minLength={8} />
-            </label>
-          </div>
-          <button className="primary-btn" type="submit" disabled={pending}>
-            {pending ? 'Creation...' : 'Creer le compte'}
-          </button>
-        </form>
-      </Card>
-      <Card title="Apercu (donnees de demonstration)">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Nom</th>
-              <th>Email</th>
-              <th>Role</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.id}>
-                <td>{user.name}</td>
-                <td>{user.email}</td>
-                <td>{user.role}</td>
+            <div className="grid cols-3">
+              <label className="field">
+                <span>Role *</span>
+                <select value={role} onChange={(ev) => setRole(ev.target.value as AppRealmRole)}>
+                  <option value="student">Etudiant</option>
+                  <option value="teacher">Enseignant</option>
+                  <option value="admin">Administrateur</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Mot de passe (min. 8) *</span>
+                <input type="password" value={password} onChange={(ev) => setPassword(ev.target.value)} required minLength={8} />
+              </label>
+              <label className="field">
+                <span>Confirmer *</span>
+                <input type="password" value={confirm} onChange={(ev) => setConfirm(ev.target.value)} required minLength={8} />
+              </label>
+            </div>
+            <button className="primary-btn" type="submit" disabled={pending}>
+              {pending ? 'Creation...' : 'Creer le compte'}
+            </button>
+          </form>
+        </Card>
+      )}
+
+      <Card title="Liste des utilisateurs">
+        {loading && <LoadingState />}
+        {!loading && usersList.length === 0 && <EmptyState message="Aucun utilisateur trouve." />}
+        {!loading && usersList.length > 0 && (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Utilisateur</th>
+                <th>Email</th>
+                <th>Prenom</th>
+                <th>Nom</th>
+                <th>Role</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {usersList.map((u) => (
+                <tr key={u.id}>
+                  <td><strong>{u.username}</strong></td>
+                  <td>{u.email || '-'}</td>
+                  <td>{u.first_name || '-'}</td>
+                  <td>{u.last_name || '-'}</td>
+                  <td><Badge value={u.role?.toUpperCase() || 'UNKNOWN'} type="info" /></td>
+                  <td>
+                    <div className="toolbar">
+                      <button className="ghost-btn small" onClick={() => openEdit(u)}>Modifier</button>
+                      <button className="ghost-btn small" style={{ color: 'var(--color-error)' }} onClick={() => handleDelete(u.id, u.username)}>
+                        {deleteConfirm === u.username ? 'Confirmer ?' : 'Supprimer'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Card>
+
+      {editingUser && (
+        <Card title={`Modifier l'utilisateur: ${editingUser.username}`}>
+          <form className="stack" onSubmit={handleUpdate}>
+            <div className="grid cols-2">
+              <label className="field">
+                <span>Nom d'utilisateur (lecture seule)</span>
+                <input value={editForm.email} disabled />
+              </label>
+              <label className="field">
+                <span>Email</span>
+                <input type="email" value={editForm.email} onChange={(ev) => setEditForm({...editForm, email: ev.target.value})} />
+              </label>
+            </div>
+            <div className="grid cols-2">
+              <label className="field">
+                <span>Prenom</span>
+                <input value={editForm.first_name} onChange={(ev) => setEditForm({...editForm, first_name: ev.target.value})} />
+              </label>
+              <label className="field">
+                <span>Nom</span>
+                <input value={editForm.last_name} onChange={(ev) => setEditForm({...editForm, last_name: ev.target.value})} />
+              </label>
+            </div>
+            <label className="field">
+              <span>Role</span>
+              <select value={editForm.role} onChange={(ev) => setEditForm({...editForm, role: ev.target.value as AppRealmRole})}>
+                <option value="student">Etudiant</option>
+                <option value="teacher">Enseignant</option>
+                <option value="admin">Administrateur</option>
+              </select>
+            </label>
+            <div className="toolbar">
+              <button type="submit" className="primary-btn" disabled={editPending}>
+                {editPending ? 'Mise a jour...' : 'Enregistrer'}
+              </button>
+              <button type="button" className="ghost-btn" onClick={closeEdit}>Annuler</button>
+            </div>
+          </form>
+        </Card>
+      )}
+
       <Card title="Conformite Microservice - Administration">
         <ul className="list">
           <li className="forum-item">
             <div>
               <strong>Creation comptes</strong>
-              <span>Payload aligne sur `admin-service` avec roles en minuscules.</span>
+              <span>Payload aligne sur admin-service avec roles Keycloak.</span>
             </div>
-            <Badge value="Admin" type="info" />
+            <Badge value="POST /api/admin/users" type="info" />
           </li>
           <li className="forum-item">
             <div>
-              <strong>Controle d&apos;acces</strong>
-              <span>Permissions appliquees selon profil (etudiant/enseignant/admin).</span>
+              <strong>Liste utilisateurs</strong>
+              <span>Chargement depuis Keycloak Admin API avec affichage en temps reel.</span>
             </div>
-            <Badge value="RBAC" type="success" />
+            <Badge value="GET /api/admin/users" type="success" />
+          </li>
+          <li className="forum-item">
+            <div>
+              <strong>Edition utilisateurs</strong>
+              <span>Modification profil et roles en temps reel.</span>
+            </div>
+            <Badge value="PATCH /api/admin/users/{id}" type="info" />
+          </li>
+          <li className="forum-item">
+            <div>
+              <strong>Suppression utilisateurs</strong>
+              <span>Suppression avec confirmation de securite.</span>
+            </div>
+            <Badge value="DELETE /api/admin/users/{id}" type="warning" />
           </li>
         </ul>
       </Card>

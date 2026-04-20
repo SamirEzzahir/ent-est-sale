@@ -177,6 +177,15 @@ export function DashboardLayout() {
             <h4>Administration</h4>
             <div className="module-links">
               <Link
+                to={`${base}/admin/users`}
+                className={`mini-link ${location.pathname.includes('/admin/users') ? 'active' : ''}`}
+              >
+                <span className="mini-icon-wrap">
+                  <Users size={14} className="mini-icon" />
+                </span>
+                <span className="mini-label">Gestion utilisateurs</span>
+              </Link>
+              <Link
                 to={`${base}/account-approvals`}
                 className={`mini-link ${location.pathname.includes('/account-approvals') ? 'active' : ''}`}
               >
