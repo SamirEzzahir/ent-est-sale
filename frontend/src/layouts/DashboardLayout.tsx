@@ -23,7 +23,6 @@ import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'reac
 import { useEffect, useMemo, useState } from 'react'
 import { useAppContext } from '../context/AppContext'
 import { entContent } from '../config/content'
-import { listPendingAccounts } from '../lib/authApi'
 
 const mainNav = [
   { label: 'Accueil', to: 'dashboard', icon: House, roles: ['student', 'teacher', 'admin'] },
@@ -54,7 +53,6 @@ export function DashboardLayout() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isModulesOpen, setIsModulesOpen] = useState(true)
-  const [pendingCount, setPendingCount] = useState(0)
 
   const visibleMainNav = useMemo(
     () =>
@@ -98,32 +96,8 @@ export function DashboardLayout() {
     setIsMobileMenuOpen(false)
   }, [location.pathname, isInModuleRoute])
 
-  useEffect(() => {
-    if (currentRole !== 'admin') {
-      setPendingCount(0)
-      return
-    }
-    let active = true
-    const pull = async () => {
-      try {
-        const rows = await listPendingAccounts()
-        if (active) setPendingCount(rows.length)
-      } catch {
-        if (active) setPendingCount(0)
-      }
-    }
-    void pull()
-    const timer = setInterval(() => {
-      void pull()
-    }, 15000)
-    return () => {
-      active = false
-      clearInterval(timer)
-    }
-  }, [currentRole])
-
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/', { replace: true })
   }
 
@@ -169,9 +143,6 @@ export function DashboardLayout() {
                 <item.icon size={15} className="nav-icon" />
               </span>
               <span className="nav-label">{item.label}</span>
-              {item.to.endsWith('validate-accounts') && pendingCount > 0 ? (
-                <span className="mini-badge">{pendingCount}</span>
-              ) : null}
             </NavLink>
           ))}
         </nav>
@@ -196,9 +167,6 @@ export function DashboardLayout() {
                     <item.icon size={14} className="mini-icon" />
                   </span>
                   <span className="mini-label">{item.label}</span>
-                  {item.to.endsWith('validate-accounts') && pendingCount > 0 ? (
-                    <span className="mini-badge">{pendingCount}</span>
-                  ) : null}
                 </Link>
               ))}
             </div>
@@ -216,7 +184,6 @@ export function DashboardLayout() {
                   <ShieldCheck size={14} className="mini-icon" />
                 </span>
                 <span className="mini-label">Approbation comptes</span>
-                {pendingCount > 0 ? <span className="mini-badge">{pendingCount}</span> : null}
               </Link>
               <Link
                 to={`${base}/admin/statistiques`}
@@ -270,7 +237,7 @@ export function DashboardLayout() {
             </span>
             <span className="user-name">{currentUser.name}</span>
             <div className="avatar">{currentUser.avatar}</div>
-            <button className="text-btn" type="button" onClick={handleLogout}>
+            <button className="text-btn" type="button" onClick={() => void handleLogout()}>
               <LogOut size={15} /> Deconnexion
             </button>
           </div>

@@ -1,6 +1,220 @@
 services:
+
+  # =====================
+  # GATEWAY
+  # =====================
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: gateway
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - core-auth
+      - upload-service
+      - download-service
+      - admin-service
+    networks:
+      - app-network
+
+  # =====================
+  # FRONTEND
+  # =====================
   frontend:
     build: ./frontend
-    container_name: ent-frontend
+    container_name: frontend
+    # ✅ Remove direct port, nginx handles it
+    networks:
+      - app-network
+
+  # =====================
+  # CORE AUTH
+  # =====================
+  core-auth:
+    build: ./backend/core-auth
+    container_name: core-auth
     ports:
-      - "5173:5173"
+      - "8001:8001"
+    env_file:
+      - .env
+    depends_on:
+      keycloak:
+        condition: service_started
+    networks:
+      - app-network
+
+  # =====================
+  # UPLOAD SERVICE
+  # =====================
+  upload-service:
+    build: ./backend/upload-service
+    container_name: upload-service
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    depends_on:
+      minio:
+        condition: service_started
+      cassandra:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # =====================
+  # DOWNLOAD SERVICE
+  # =====================
+  download-service:
+    build: ./backend/download-service
+    container_name: download-service
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    depends_on:
+      minio:
+        condition: service_started
+      cassandra:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # =====================
+  # ADMIN SERVICE
+  # =====================
+  admin-service:
+    build: ./backend/admin-service
+    container_name: admin-service
+    ports:
+      - "8004:8004"
+    env_file:
+      - .env
+    networks:
+      - app-network
+
+  # =====================
+  # AI ASSISTANT SERVICE
+  # =====================
+  ai-assistant-service:
+    build: ./backend/ai-assistant-service
+    container_name: ai-assistant-service
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    env_file:
+      - .env
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      download-service:
+        condition: service_started
+      ollama:
+        condition: service_started
+    networks:
+      - app-network
+
+  # =====================
+  # KEYCLOAK  ← all fixes here
+  # =====================
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: keycloak
+    ports:
+    - "8080:8080"
+    entrypoint:
+    - /bin/sh
+    - -ec
+    - |
+      exec /opt/keycloak/bin/kc.sh start-dev --import-realm --health-enabled=true
+    env_file:
+    - .env
+    environment:
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+    volumes:
+    - ./keycloak:/opt/keycloak/data/import
+    networks:
+    - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo UP || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 600s
+
+  # =====================
+  # MINIO
+  # =====================
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    env_file:
+      - .env
+    volumes:
+      - minio-data:/data
+    networks:
+      - app-network
+
+
+  # =====================
+  # OLLAMA
+  # =====================
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - app-network
+
+
+  # =====================
+  # CASSANDRA
+  # =====================
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh localhost 9042 -e 'describe keyspaces' || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 20
+      start_period: 420s
+
+  cassandra-init:
+    image: cassandra:4.1
+    container_name: cassandra-init
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    volumes:
+      - ./cassandra/init.cql:/init.cql
+    command: cqlsh cassandra -f /init.cql
+    networks:
+      - app-network
+    restart: on-failure
+
+networks:
+  app-network:
+
+volumes:
+  minio-data:
+  cassandra-data:
+  ollama-data:

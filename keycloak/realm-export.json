@@ -24,7 +24,7 @@
       "enabled": true,
       "publicClient": false,
       "secret": "ent-backend-secret",
-      "directAccessGrantsEnabled": false,
+      "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,

@@ -3,18 +3,14 @@ import type { ReactNode } from 'react'
 import { Bell, BookOpen, CalendarClock, FileUp, Headset, NotebookPen, ShieldCheck, Wrench } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import { adminStats, assignments, courses, events, files, forumTopics, messages, notifications, users } from '../data/mockData'
+import { adminStats, assignments, courses, events, forumTopics, messages, notifications, users } from '../data/mockData'
 import { Badge, Card, EmptyState, ErrorState, LoadingState, PageHeader, SearchField } from '../components/ui'
 import { entContent } from '../config/content'
-import { uploadApiConfigured, uploadCourseFile } from '../lib/uploadApi'
+import { listRemoteFiles, getFileBlob, type RemoteFileItem } from '../lib/downloadApi'
+import { uploadCourseFile } from '../lib/uploadApi'
 import {
   adminCreateUserRequest,
-  approvePendingAccount,
-  authApiConfigured,
-  listPendingAccounts,
-  rejectPendingAccount,
   type AppRealmRole,
-  type PendingAccount,
 } from '../lib/authApi'
 
 function RoleScopeNote({ module }: { module: string }) {
@@ -348,9 +344,6 @@ export function CourseUploadPage() {
     <>
       <PageHeader title="Upload de cours (enseignant)" subtitle="Publication de contenus pedagogiques." />
       <RoleScopeNote module="courses" />
-      {!uploadApiConfigured() ? (
-        <ErrorState message="Definir VITE_UPLOAD_API_URL (ex: http://localhost:8002) dans .env puis redemarrer Vite." />
-      ) : null}
       <div className="upload-layout">
         <Card>
           <form
@@ -417,7 +410,7 @@ export function CourseUploadPage() {
                 <span>{Math.max(1, Math.round(file.size / 1024))} KB</span>
               </div>
             ) : null}
-            <button className="primary-btn" type="submit" disabled={pending || !uploadApiConfigured()}>
+            <button className="primary-btn" type="submit" disabled={pending}>
               {pending ? 'Envoi...' : 'Envoyer vers MinIO'}
             </button>
           </form>
@@ -455,17 +448,38 @@ export function FilesPage() {
   const { currentRole } = useAppContext()
   const canUploadFile = currentRole === 'teacher' || currentRole === 'admin'
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState('all')
+  const [items, setItems] = useState<RemoteFileItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [activity, setActivity] = useState<string | null>(null)
+
+  const loadFiles = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const rows = await listRemoteFiles()
+      setItems(rows)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Chargement impossible')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadFiles()
+  }, [])
+
   const filteredFiles = useMemo(
     () =>
-      files.filter((file) => {
+      items.filter((file) => {
         const matchesQuery =
-          file.name.toLowerCase().includes(query.toLowerCase()) ||
-          file.owner.toLowerCase().includes(query.toLowerCase())
-        const matchesCategory = category === 'all' || file.category === category
-        return matchesQuery && matchesCategory
+          file.filename.toLowerCase().includes(query.toLowerCase()) ||
+          file.uploaded_by.toLowerCase().includes(query.toLowerCase()) ||
+          file.course_name.toLowerCase().includes(query.toLowerCase())
+        return matchesQuery
       }),
-    [query, category],
+    [items, query],
   )
 
   return (
@@ -474,25 +488,90 @@ export function FilesPage() {
       <RoleScopeNote module="files" />
       <div className="toolbar">
         <SearchField placeholder="Rechercher un document..." value={query} onChange={setQuery} />
-        <select value={category} onChange={(event) => setCategory(event.target.value)}>
-          <option value="all">Toutes categories</option>
-          <option value="Scolarite">Scolarite</option>
-          <option value="Support">Support</option>
-          <option value="Cours">Cours</option>
-        </select>
-        {canUploadFile && <button className="primary-btn">Upload</button>}
+        <button className="ghost-btn" type="button" onClick={() => void loadFiles()} disabled={loading}>
+          {loading ? 'Actualisation...' : 'Actualiser'}
+        </button>
+        {canUploadFile ? <Link className="primary-btn" to="../cours/upload">Upload</Link> : null}
       </div>
+      {activity ? (
+        <p className="state success" role="status">
+          {activity}
+        </p>
+      ) : null}
+      {error ? <ErrorState message={error} /> : null}
       <Card>
-        <table className="table"><thead><tr><th>Nom</th><th>Categorie</th><th>Proprietaire</th><th>Date</th><th>Taille</th><th></th></tr></thead><tbody>
-          {filteredFiles.map((file) => <tr key={file.id}><td>{file.name}</td><td>{file.category}</td><td>{file.owner}</td><td>{file.date}</td><td>{file.size}</td><td><button className="ghost-btn small">Download</button></td></tr>)}
-        </tbody></table>
-        <div className="toolbar">
-          <button className="ghost-btn small">Precedent</button>
-          <Badge value="Page 1 / 4" />
-          <button className="ghost-btn small">Suivant</button>
-        </div>
+        {loading ? (
+          <LoadingState />
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th>Cours</th>
+                <th>Proprietaire</th>
+                <th>Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredFiles.map((file) => (
+                <tr key={file.id}>
+                  <td>{file.filename}</td>
+                  <td>{file.course_name}</td>
+                  <td>{file.uploaded_by}</td>
+                  <td>{new Date(file.upload_date).toLocaleString()}</td>
+                  <td>
+                    <div className="toolbar">
+                      <button
+                        className="ghost-btn small"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const blob = await getFileBlob(file.id, 'attachment')
+                            const url = URL.createObjectURL(blob)
+                            const link = document.createElement('a')
+                            link.href = url
+                            link.download = file.filename
+                            document.body.appendChild(link)
+                            link.click()
+                            link.remove()
+                            setTimeout(() => URL.revokeObjectURL(url), 1000)
+                            setActivity(`Telechargement lance pour ${file.filename}.`)
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : 'Telechargement impossible')
+                          }
+                        }}
+                      >
+                        Download
+                      </button>
+                      <button
+                        className="ghost-btn small"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const blob = await getFileBlob(file.id, 'inline')
+                            const url = URL.createObjectURL(blob)
+                            window.open(url, '_blank', 'noopener,noreferrer')
+                            setTimeout(() => URL.revokeObjectURL(url), 60000)
+                            setActivity(`Apercu ouvert pour ${file.filename}.`)
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : 'Ouverture impossible')
+                          }
+                        }}
+                      >
+                        Apercu
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Card>
-      {!filteredFiles.length && <ErrorState message="Aucun fichier trouve. Essayez un autre mot-cle ou categorie." />}
+      {!loading && !error && !filteredFiles.length ? (
+        <EmptyState message="Aucun fichier trouve. Essayez un autre mot-cle." />
+      ) : null}
       <Card title="Conformite Microservice - Gestion des fichiers">
         <ul className="list">
           <li className="forum-item"><div><strong>Stockage</strong><span>Fichiers pedagogiques stockes dans MinIO (objet).</span></div><Badge value="MinIO" type="info" /></li>
@@ -818,62 +897,6 @@ export function EditProfilePage() {
 
 export function AdminValidateAccountsPage() {
   const { currentRole } = useAppContext()
-  const [items, setItems] = useState<PendingAccount[]>([])
-  const [history, setHistory] = useState<Array<{
-    id: string
-    email: string
-    action: 'APPROVED' | 'REJECTED'
-    at: string
-  }>>([])
-  const [query, setQuery] = useState('')
-  const [actionFilter, setActionFilter] = useState<'all' | 'APPROVED' | 'REJECTED'>('all')
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-
-  const load = async () => {
-    setPending(true)
-    setError(null)
-    try {
-      const rows = await listPendingAccounts()
-      setItems(rows)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chargement impossible')
-    } finally {
-      setPending(false)
-    }
-  }
-
-  useEffect(() => {
-    if (currentRole !== 'admin') return
-    void load()
-    const timer = setInterval(() => void load(), 15000)
-    return () => clearInterval(timer)
-  }, [currentRole])
-
-  const filteredItems = useMemo(
-    () =>
-      items.filter((item) => {
-        const q = query.trim().toLowerCase()
-        if (!q) return true
-        return (
-          item.email.toLowerCase().includes(q) ||
-          `${item.first_name} ${item.last_name}`.toLowerCase().includes(q)
-        )
-      }),
-    [items, query],
-  )
-
-  const filteredHistory = useMemo(
-    () =>
-      history.filter((entry) => {
-        const q = query.trim().toLowerCase()
-        const matchesQuery = !q || entry.email.toLowerCase().includes(q)
-        const matchesAction = actionFilter === 'all' || entry.action === actionFilter
-        return matchesQuery && matchesAction
-      }),
-    [history, query, actionFilter],
-  )
 
   if (currentRole !== 'admin') {
     return (
@@ -886,151 +909,20 @@ export function AdminValidateAccountsPage() {
 
   return (
     <>
-      <PageHeader title="Approbation des comptes" subtitle="Approuver ou refuser les comptes etudiants en attente." />
+      <PageHeader title="Approbation des comptes" subtitle="Fonction non exposee par les microservices actifs." />
       <RoleScopeNote module="admin" />
-      <div className="grid cols-4">
-        <Card>
-          <p className="muted">En attente</p>
-          <h2>{items.length}</h2>
-        </Card>
-        <Card>
-          <p className="muted">Approuves (session)</p>
-          <h2>{history.filter((x) => x.action === 'APPROVED').length}</h2>
-        </Card>
-        <Card>
-          <p className="muted">Refuses (session)</p>
-          <h2>{history.filter((x) => x.action === 'REJECTED').length}</h2>
-        </Card>
-        <Card>
-          <p className="muted">Total actions (session)</p>
-          <h2>{history.length}</h2>
-        </Card>
-      </div>
-      <Card>
-        <div className="toolbar">
-          <button className="ghost-btn" type="button" disabled={pending} onClick={() => void load()}>
-            {pending ? 'Actualisation...' : 'Actualiser la liste'}
-          </button>
-          <SearchField placeholder="Rechercher par email / nom..." value={query} onChange={setQuery} />
-          {success ? <Badge value={success} type="success" /> : null}
+      <Card title="Etat actuel">
+        <p className="muted">
+          La page active n'appelle plus de faux endpoints. Les microservices exposes via le gateway couvrent aujourd'hui
+          l'authentification, la creation d'utilisateurs administrateur, l'upload, la liste des fichiers et le
+          telechargement. Le workflow public de validation/approbation n'est pas disponible dans `core-auth` ni dans
+          `admin-service`.
+        </p>
+        <div className="chips">
+          <span className="chip">Pas de endpoint pending-accounts</span>
+          <span className="chip">Pas de moderation exposee</span>
+          <span className="chip">UI gardee explicite</span>
         </div>
-        {error ? (
-          <p className="auth-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-        {!filteredItems.length && !pending ? (
-          <EmptyState message="Aucun compte en attente pour le moment." />
-        ) : null}
-        <div className="list">
-          {filteredItems.map((item) => (
-            <div key={item.id} className="message-item">
-              <div>
-                <strong>{item.email}</strong>
-                <span>
-                  {(item.first_name || item.last_name)
-                    ? `${item.first_name} ${item.last_name}`.trim()
-                    : 'Nom non renseigne'}
-                </span>
-                <span>Statut: {item.status}</span>
-                {item.provision_source ? (
-                  <span>Origine: {item.provision_source === 'admin-provision' ? 'Administrateur' : item.provision_source}</span>
-                ) : null}
-                {item.validation_requested_at ? (
-                  <span>Demande utilisateur: {new Date(item.validation_requested_at).toLocaleString()}</span>
-                ) : null}
-              </div>
-              <div className="toolbar">
-                <button
-                  className="primary-btn"
-                  type="button"
-                  onClick={async () => {
-                    setError(null)
-                    setSuccess(null)
-                    try {
-                      const msg = await approvePendingAccount(item.id)
-                      setSuccess(msg)
-                      setHistory((prev) => [
-                        {
-                          id: item.id,
-                          email: item.email,
-                          action: 'APPROVED',
-                          at: new Date().toISOString(),
-                        },
-                        ...prev,
-                      ])
-                      setItems((prev) => prev.filter((x) => x.id !== item.id))
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : 'Validation impossible')
-                    }
-                  }}
-                >
-                  Valider
-                </button>
-                <button
-                  className="ghost-btn"
-                  type="button"
-                  onClick={async () => {
-                    setError(null)
-                    setSuccess(null)
-                    try {
-                      const msg = await rejectPendingAccount(item.id)
-                      setSuccess(msg)
-                      setHistory((prev) => [
-                        {
-                          id: item.id,
-                          email: item.email,
-                          action: 'REJECTED',
-                          at: new Date().toISOString(),
-                        },
-                        ...prev,
-                      ])
-                      setItems((prev) => prev.filter((x) => x.id !== item.id))
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : 'Refus impossible')
-                    }
-                  }}
-                >
-                  Refuser
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-      <Card title="Historique des decisions (session en cours)">
-        <div className="toolbar">
-          <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value as 'all' | 'APPROVED' | 'REJECTED')}>
-            <option value="all">Toutes actions</option>
-            <option value="APPROVED">Approuve</option>
-            <option value="REJECTED">Refuse</option>
-          </select>
-          <Badge value={`${filteredHistory.length} element(s)`} />
-        </div>
-        {!filteredHistory.length ? (
-          <EmptyState message="Aucune action encore enregistree." />
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Email</th>
-                <th>Action</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredHistory.map((entry) => (
-                <tr key={`${entry.id}-${entry.at}`}>
-                  <td>{entry.email}</td>
-                  <td>
-                    <Badge value={entry.action === 'APPROVED' ? 'Approuve' : 'Refuse'} type={entry.action === 'APPROVED' ? 'success' : 'warning'} />
-                  </td>
-                  <td>{new Date(entry.at).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
       </Card>
     </>
   )
@@ -1038,12 +930,13 @@ export function AdminValidateAccountsPage() {
 
 export function AdminUsersPage() {
   const { currentRole } = useAppContext()
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
-  const [role, setRole] = useState<AppRealmRole>('STUDENT')
+  const [role, setRole] = useState<AppRealmRole>('student')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -1062,9 +955,10 @@ export function AdminUsersPage() {
     <>
       <PageHeader title="Administration - Utilisateurs" subtitle="Creation de comptes et gestion des roles." />
       <RoleScopeNote module="admin" />
-      <Card title="Creer un compte (validation requise)">
+      <Card title="Creer un compte Keycloak">
         <p className="muted">
-          Le compte est cree desactive jusqu&apos;a approbation dans <Link to="/admin/account-approvals">Approbation des comptes</Link>.
+          Le formulaire envoie maintenant le schema reel attendu par `admin-service`: `username`, `password`,
+          `confirm_password`, `role`, avec options `email`, `first_name` et `last_name`.
         </p>
         <form
           className="stack"
@@ -1072,8 +966,8 @@ export function AdminUsersPage() {
             e.preventDefault()
             setError(null)
             setSuccess(null)
-            if (!authApiConfigured()) {
-              setError('Definir VITE_AUTH_API_URL (ex: http://localhost:8000)')
+            if (!username.trim()) {
+              setError('Le nom d utilisateur est obligatoire.')
               return
             }
             if (password !== confirm) {
@@ -1086,8 +980,17 @@ export function AdminUsersPage() {
             }
             setPending(true)
             try {
-              const res = await adminCreateUserRequest(email, password, firstName, lastName, role)
-              setSuccess(res.message)
+              const res = await adminCreateUserRequest({
+                username,
+                password,
+                confirmPassword: confirm,
+                role,
+                email,
+                firstName,
+                lastName,
+              })
+              setSuccess(res.message ?? `Compte cree pour ${res.username ?? username}.`)
+              setUsername('')
               setEmail('')
               setPassword('')
               setConfirm('')
@@ -1110,6 +1013,10 @@ export function AdminUsersPage() {
               {success}
             </p>
           ) : null}
+          <label className="field">
+            <span>Nom d'utilisateur</span>
+            <input value={username} onChange={(ev) => setUsername(ev.target.value)} placeholder="prenom.nom" required />
+          </label>
           <div className="grid cols-2">
             <label className="field">
               <span>Prenom</span>
@@ -1121,15 +1028,15 @@ export function AdminUsersPage() {
             </label>
           </div>
           <label className="field">
-            <span>Email institutionnel</span>
-            <input type="email" value={email} onChange={(ev) => setEmail(ev.target.value)} placeholder="prenom.nom@estsale.ma" required />
+            <span>Email institutionnel (optionnel)</span>
+            <input type="email" value={email} onChange={(ev) => setEmail(ev.target.value)} placeholder="prenom.nom@estsale.ma" />
           </label>
           <label className="field">
             <span>Role realm</span>
             <select value={role} onChange={(ev) => setRole(ev.target.value as AppRealmRole)}>
-              <option value="STUDENT">Etudiant</option>
-              <option value="TEACHER">Enseignant</option>
-              <option value="ADMIN">Administrateur</option>
+              <option value="student">Etudiant</option>
+              <option value="teacher">Enseignant</option>
+              <option value="admin">Administrateur</option>
             </select>
           </label>
           <div className="grid cols-2">
@@ -1172,7 +1079,7 @@ export function AdminUsersPage() {
           <li className="forum-item">
             <div>
               <strong>Creation comptes</strong>
-              <span>Reservee aux administrateurs; validation sur la file d&apos;attente.</span>
+              <span>Payload aligne sur `admin-service` avec roles en minuscules.</span>
             </div>
             <Badge value="Admin" type="info" />
           </li>

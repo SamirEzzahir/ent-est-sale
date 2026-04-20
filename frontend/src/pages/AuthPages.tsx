@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
-import { HelpCircle, LifeBuoy, MailCheck, ShieldAlert } from 'lucide-react'
+import { HelpCircle, LifeBuoy, LogIn, ShieldAlert } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { entContent } from '../config/content'
-import { authApiConfigured, submitValidationRequest } from '../lib/authApi'
+import { beginKeycloakLogin, completeKeycloakLogin } from '../lib/authApi'
 
 function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
@@ -42,10 +42,11 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
 export function LoginPage() {
   const { login, isAuthenticated, isSessionReady, currentRole } = useAppContext()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
 
   useEffect(() => {
     if (!isSessionReady || !isAuthenticated) return
@@ -53,7 +54,7 @@ export function LoginPage() {
   }, [isSessionReady, isAuthenticated, currentRole, navigate])
 
   return (
-    <AuthShell title="Connexion au portail ENT" subtitle="Accedez a votre espace universitaire securise.">
+    <AuthShell title="Connexion au portail ENT" subtitle="Connectez-vous avec votre nom d'utilisateur, votre email, ou via Keycloak.">
       <form
         className="stack"
         onSubmit={async (e) => {
@@ -61,7 +62,7 @@ export function LoginPage() {
           setError(null)
           setPending(true)
           try {
-            const role = await login(email.trim(), password)
+            const role = await login(identifier.trim(), password)
             navigate(`/${role}/dashboard`, { replace: true })
           } catch (err) {
             setError(err instanceof Error ? err.message : 'Connexion impossible')
@@ -76,14 +77,13 @@ export function LoginPage() {
           </p>
         ) : null}
         <label className="field">
-          <span>Email institutionnel</span>
+          <span>Nom d'utilisateur ou email</span>
           <input
-            name="email"
-            type="email"
+            name="identifier"
             autoComplete="username"
-            value={email}
-            onChange={(ev) => setEmail(ev.target.value)}
-            placeholder="prenom.nom@estsale.ma"
+            value={identifier}
+            onChange={(ev) => setIdentifier(ev.target.value)}
+            placeholder="prenom.nom ou prenom.nom@estsale.ma"
             required
           />
         </label>
@@ -99,19 +99,77 @@ export function LoginPage() {
             required
           />
         </label>
-        <button className="primary-btn" type="submit" disabled={pending}>
+        <button className="primary-btn" type="submit" disabled={pending || redirecting}>
           {pending ? 'Connexion...' : 'Se connecter'}
+        </button>
+        <button
+          className="ghost-btn"
+          type="button"
+          disabled={pending || redirecting}
+          onClick={async () => {
+            setError(null)
+            setRedirecting(true)
+            try {
+              await beginKeycloakLogin()
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Redirection Keycloak impossible')
+              setRedirecting(false)
+            }
+          }}
+        >
+          <LogIn size={16} /> {redirecting ? 'Redirection...' : 'Continue with Keycloak'}
         </button>
       </form>
       <div className="links-row">
         <Link to="/forgot-password">Mot de passe oublie</Link>
-        <Link to="/validate-account">Demander la validation de mon compte</Link>
       </div>
       <p className="muted" style={{ marginTop: '0.75rem', fontSize: '0.9rem' }}>
-        Les comptes sont crees par l&apos;administration. Si vous avez recu un identifiant, utilisez la demande de validation une fois votre compte prepare.
+        Le compte administrateur peut aussi creer des utilisateurs directement depuis l'espace ENT.
       </p>
       <Link to="/help" className="sub-link">
         <HelpCircle size={15} /> Besoin d'aide ?
+      </Link>
+    </AuthShell>
+  )
+}
+
+export function AuthCallbackPage() {
+  const { completeLogin } = useAppContext()
+  const navigate = useNavigate()
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    if (!code) {
+      setError('Code Keycloak manquant dans le callback.')
+      return
+    }
+
+    void (async () => {
+      try {
+        const { user } = await completeKeycloakLogin(code)
+        completeLogin(user)
+        navigate(`/${user.role}/dashboard`, { replace: true })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Echec du callback Keycloak')
+      }
+    })()
+  }, [completeLogin, navigate])
+
+  return (
+    <AuthShell title="Connexion Keycloak" subtitle="Finalisation de votre authentification...">
+      {error ? (
+        <p className="auth-error" role="alert">
+          {error}
+        </p>
+      ) : (
+        <p className="state success" role="status">
+          Connexion en cours...
+        </p>
+      )}
+      <Link to="/" className="sub-link">
+        Retour a la connexion
       </Link>
     </AuthShell>
   )
@@ -129,12 +187,10 @@ export function RegistrationClosedPage() {
           Seuls les administrateurs peuvent creer un compte sur la plateforme ENT.
         </p>
         <p className="muted">
-          Si votre etablissement vous a attribue un compte qui est encore en attente de validation, utilisez la page{' '}
-          <Link to="/validate-account">Demander la validation</Link> pour signaler votre demande aux administrateurs.
+          Si vous avez besoin d'un compte, contactez un administrateur de l'ENT pour qu'il vous provisionne dans Keycloak.
         </p>
         <div className="links-row">
           <Link to="/">Retour a la connexion</Link>
-          <Link to="/validate-account">Demander la validation de mon compte</Link>
         </div>
       </div>
     </AuthShell>
@@ -143,16 +199,15 @@ export function RegistrationClosedPage() {
 
 export function ForgotPasswordPage() {
   return (
-    <AuthShell title="Reinitialiser le mot de passe" subtitle="Saisissez votre email pour recevoir un lien de recuperation.">
-      <form className="stack">
-        <label className="field">
-          <span>Email institutionnel</span>
-          <input placeholder="prenom.nom@estsale.ma" />
-        </label>
-        <button className="primary-btn" type="button">
-          Envoyer le lien
+    <AuthShell title="Reinitialiser le mot de passe" subtitle="Utilisez l'ecran de connexion Keycloak si votre realm a active la recuperation.">
+      <div className="stack">
+        <p className="muted">
+          Cette interface ne gere pas encore le reset de mot de passe cote frontend. Utilisez le lien de recuperation dans Keycloak ou contactez l'administration.
+        </p>
+        <button className="primary-btn" type="button" onClick={() => void beginKeycloakLogin()}>
+          Ouvrir Keycloak
         </button>
-      </form>
+      </div>
       <Link to="/" className="sub-link">
         Retour a la connexion
       </Link>
@@ -161,82 +216,17 @@ export function ForgotPasswordPage() {
 }
 
 export function ValidateAccountPage() {
-  const [email, setEmail] = useState('')
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
-
   return (
     <AuthShell
-      title="Demande de validation de compte"
-      subtitle="Reserve aux comptes deja crees par l'administration et encore en attente d'activation."
+      title="Validation de compte"
+      subtitle="Ce flux n'est pas expose par les microservices actifs."
     >
-      <form
-        className="stack"
-        onSubmit={async (e) => {
-          e.preventDefault()
-          setError(null)
-          setSuccess(null)
-          if (!authApiConfigured()) {
-            setError('Definir VITE_AUTH_API_URL (ex: http://localhost:8000)')
-            return
-          }
-          setPending(true)
-          try {
-            const res = await submitValidationRequest(email, message)
-            setSuccess(res.message)
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Envoi impossible')
-          } finally {
-            setPending(false)
-          }
-        }}
-      >
-        {error ? (
-          <p className="auth-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-        {success ? (
-          <p className="state success" role="status">
-            <MailCheck size={15} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-            {success}
-          </p>
-        ) : null}
-        <label className="field">
-          <span>Email institutionnel du compte</span>
-          <input
-            name="email"
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(ev) => setEmail(ev.target.value)}
-            placeholder="prenom.nom@estsale.ma"
-            required
-          />
-        </label>
-        <label className="field">
-          <span>Message (optionnel)</span>
-          <textarea
-            name="message"
-            rows={4}
-            value={message}
-            onChange={(ev) => setMessage(ev.target.value)}
-            placeholder="Ex: service, promotion, ou precision pour l'administrateur..."
-            maxLength={2000}
-          />
-        </label>
-        <button className="primary-btn" type="submit" disabled={pending}>
-          {pending ? 'Envoi...' : 'Envoyer la demande de validation'}
-        </button>
-      </form>
       <p className="muted">
-        Un administrateur traitera votre demande depuis l&apos;espace ENT. Vous pourrez vous connecter une fois le compte valide.
+        La pile active propose aujourd'hui la creation de comptes par un administrateur et l'authentification Keycloak. La demande publique de validation n'est pas disponible dans `core-auth` ni `admin-service`.
       </p>
       <div className="links-row">
         <Link to="/">Retour a la connexion</Link>
-        <Link to="/help">Besoin d&apos;aide ?</Link>
+        <Link to="/help">Besoin d'aide ?</Link>
       </div>
     </AuthShell>
   )
@@ -252,6 +242,9 @@ export function HelpPage() {
         <button className="support-btn" type="button">
           <LifeBuoy size={18} /> Contacter le support
         </button>
+        <p className="muted">
+          Pour les problemes de mot de passe, privilegiez d'abord la connexion Keycloak ou l'administrateur ENT.
+        </p>
       </div>
       <Link to="/" className="sub-link">
         Retour a la connexion

@@ -1,159 +1,181 @@
-import { apiRoleToAppRole } from './jwt'
+import type { Role, User } from '../types'
 import { clearStoredTokens, getStoredAccessToken, getStoredRefreshToken, setStoredTokens } from './authStorage'
-import type { User } from '../types'
-import { users } from '../data/mockData'
+import { apiRoleToAppRole, appRoleFromRealmAccess, decodeJwtPayload, isTokenExpired } from './jwt'
+import { parseApiError, readJsonOrThrow, readResponseText, resolveApiBase } from './api'
 
-const base = () => (import.meta.env.VITE_AUTH_API_URL as string | undefined)?.replace(/\/$/, '') ?? ''
+const authBase = () => resolveApiBase(import.meta.env.VITE_AUTH_API_URL as string | undefined, '/api/auth')
+
+export interface AuthUserPayload {
+  id?: string
+  username?: string
+  email?: string
+  role: string
+}
 
 export interface LoginResponse {
   access_token: string
-  refresh_token: string
+  refresh_token?: string | null
   token_type?: string
   expires_in?: number
   refresh_expires_in?: number
-  user: { id: string; email: string; role: string }
+  username?: string
+  role?: string
+  email?: string
+  user?: AuthUserPayload
 }
 
-function initialsFromEmail(email: string) {
-  const local = email.split('@')[0] ?? 'U'
-  const parts = local.split(/[._-]/).filter(Boolean)
-  const s = parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : local.slice(0, 2)
-  return s.toUpperCase()
+export type AppRealmRole = 'student' | 'teacher' | 'admin'
+
+export interface AdminCreateUserPayload {
+  username: string
+  password: string
+  confirmPassword: string
+  role: AppRealmRole
+  email?: string
+  firstName?: string
+  lastName?: string
 }
 
-export function buildUserFromAuthUser(apiUser: { id: string; email: string; role: string }): User {
+function displayNameFromIdentifier(identifier: string): string {
+  return identifier
+    .split(/[._@-]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function initialsFromIdentifier(identifier: string): string {
+  const cleaned = identifier.replace(/[^A-Za-z0-9]/g, '')
+  return (cleaned.slice(0, 2) || 'US').toUpperCase()
+}
+
+export function buildUserFromAuthUser(apiUser: AuthUserPayload): User {
   const role = apiRoleToAppRole(apiUser.role)
-  const mock = users.find((u) => u.role === role)
+  const email = apiUser.email?.trim() || apiUser.username?.trim() || ''
+  const identifier = apiUser.username?.trim() || email || 'utilisateur'
   return {
-    ...(mock ?? users[0]),
-    id: apiUser.id,
-    email: apiUser.email,
+    id: apiUser.id?.trim() || identifier,
+    name: displayNameFromIdentifier(identifier),
+    email,
     role,
-    name: mock?.name ?? apiUser.email.split('@')[0]?.replace(/[._]/g, ' ') ?? 'Utilisateur',
-    avatar: mock?.avatar ?? initialsFromEmail(apiUser.email),
+    faculty: 'Non renseigne',
+    level: role === 'student' ? 'Etudiant' : role === 'teacher' ? 'Enseignant' : 'Administration',
+    avatar: initialsFromIdentifier(identifier),
   }
 }
 
-export async function loginRequest(email: string, password: string): Promise<{ tokens: LoginResponse; user: User }> {
-  const url = `${base()}/login`
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  })
-  const text = await r.text()
-  if (!r.ok) {
-    throw new Error(text || `Login failed (${r.status})`)
+function normalizeLoginResponse(data: LoginResponse): { access: string; refresh: string | null; user: User } {
+  const access = data.access_token
+  const refresh = data.refresh_token ?? null
+  const apiUser: AuthUserPayload = data.user ?? {
+    id: undefined,
+    username: data.username,
+    email: data.email,
+    role: data.role ?? 'student',
   }
-  const data = JSON.parse(text) as LoginResponse
-  setStoredTokens(data.access_token, data.refresh_token)
-  const user = buildUserFromAuthUser(data.user)
-  return { tokens: data, user }
+  return {
+    access,
+    refresh,
+    user: buildUserFromAuthUser(apiUser),
+  }
 }
 
-export async function refreshSession(): Promise<{ access: string; refresh: string; user: User } | null> {
-  const refresh = getStoredRefreshToken()
-  if (!refresh) return null
-  const url = `${base()}/refresh`
-  const r = await fetch(url, {
+export async function loginRequest(identifier: string, password: string): Promise<{ access: string; refresh: string | null; user: User }> {
+  const response = await fetch(`${authBase()}/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refresh }),
+    body: JSON.stringify({ username: identifier.trim(), password }),
   })
-  const text = await r.text()
-  if (!r.ok) {
+  const data = await readJsonOrThrow<LoginResponse>(response)
+  const normalized = normalizeLoginResponse(data)
+  setStoredTokens(normalized.access, normalized.refresh)
+  return normalized
+}
+
+export async function refreshSession(): Promise<{ access: string; refresh: string | null; user: User } | null> {
+  const refreshToken = getStoredRefreshToken()
+  if (!refreshToken) return null
+
+  const response = await fetch(`${authBase()}/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+  const text = await readResponseText(response)
+  if (!response.ok) {
     clearStoredTokens()
     return null
   }
+
   const data = JSON.parse(text) as LoginResponse
-  setStoredTokens(data.access_token, data.refresh_token)
-  const user = buildUserFromAuthUser(data.user)
+  const normalized = normalizeLoginResponse(data)
+  setStoredTokens(normalized.access, normalized.refresh)
+  return normalized
+}
+
+export async function fetchCurrentUser(accessToken?: string): Promise<User> {
+  const token = accessToken ?? getStoredAccessToken()
+  if (!token) {
+    throw new Error('Session introuvable')
+  }
+  const response = await fetch(`${authBase()}/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const payload = await readJsonOrThrow<AuthUserPayload>(response)
+  return buildUserFromAuthUser(payload)
+}
+
+export function restoreUserFromToken(token: string): User {
+  const payload = decodeJwtPayload(token)
+  const role: Role = appRoleFromRealmAccess(payload) ?? 'student'
+
+  const username = String(payload.preferred_username ?? payload.email ?? payload.sub ?? 'utilisateur')
+  const email = String(payload.email ?? payload.preferred_username ?? '')
   return {
-    access: data.access_token,
-    refresh: data.refresh_token,
-    user,
+    id: String(payload.sub ?? username),
+    name: displayNameFromIdentifier(username),
+    email,
+    role,
+    faculty: 'Non renseigne',
+    level: role === 'student' ? 'Etudiant' : role === 'teacher' ? 'Enseignant' : 'Administration',
+    avatar: initialsFromIdentifier(username),
   }
 }
 
-export function authApiConfigured(): boolean {
-  return Boolean(base())
+export function canReuseStoredAccessToken(): boolean {
+  const token = getStoredAccessToken()
+  return Boolean(token && !isTokenExpired(token))
 }
 
-export interface RegisterResponse {
-  message: string
-  user_id: string
+export async function beginKeycloakLogin(): Promise<void> {
+  const redirectUri = `${window.location.origin}/auth/callback`
+  const response = await fetch(`${authBase()}/login/keycloak?redirect_uri=${encodeURIComponent(redirectUri)}`)
+  const data = await readJsonOrThrow<{ login_url: string }>(response)
+  window.location.href = data.login_url
 }
 
-function parseApiError(text: string, status: number): string {
-  try {
-    const j = JSON.parse(text) as { detail?: string | Array<{ msg?: string }> }
-    if (typeof j.detail === 'string') return j.detail
-    if (Array.isArray(j.detail)) {
-      return j.detail.map((d) => d.msg ?? JSON.stringify(d)).join(' ') || `Erreur ${status}`
-    }
-  } catch {
-    /* ignore */
+export async function completeKeycloakLogin(code: string): Promise<{ access: string; refresh: string | null; user: User }> {
+  const redirectUri = `${window.location.origin}/auth/callback`
+  const response = await fetch(
+    `${authBase()}/callback?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+  )
+  const data = await readJsonOrThrow<LoginResponse>(response)
+  const normalized = normalizeLoginResponse(data)
+  setStoredTokens(normalized.access, normalized.refresh)
+  return normalized
+}
+
+export async function logoutRequest(): Promise<string | null> {
+  const postLogoutRedirectUri = `${window.location.origin}/`
+  const response = await fetch(
+    `${authBase()}/logout/keycloak?post_logout_redirect_uri=${encodeURIComponent(postLogoutRedirectUri)}`,
+  )
+  const text = await readResponseText(response)
+  if (!response.ok) {
+    throw new Error(parseApiError(text, response.status))
   }
-  return text || `Erreur ${status}`
-}
-
-export type AppRealmRole = 'STUDENT' | 'TEACHER' | 'ADMIN'
-
-export async function adminCreateUserRequest(
-  email: string,
-  password: string,
-  firstName: string,
-  lastName: string,
-  role: AppRealmRole,
-): Promise<RegisterResponse> {
-  const url = `${base()}/admin/users`
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeader(),
-    },
-    body: JSON.stringify({
-      email: email.trim(),
-      password,
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
-      role,
-    }),
-  })
-  const text = await r.text()
-  if (!r.ok) {
-    throw new Error(parseApiError(text, r.status))
-  }
-  return JSON.parse(text) as RegisterResponse
-}
-
-export async function submitValidationRequest(email: string, message: string): Promise<{ message: string }> {
-  const url = `${base()}/validation-request`
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: email.trim(),
-      message: message.trim(),
-    }),
-  })
-  const text = await r.text()
-  if (!r.ok) {
-    throw new Error(parseApiError(text, r.status))
-  }
-  return JSON.parse(text) as { message: string }
-}
-
-export interface PendingAccount {
-  id: string
-  email: string
-  first_name: string
-  last_name: string
-  created_at: string
-  status: string
-  provision_source?: string
-  validation_requested_at?: string
+  const data = JSON.parse(text) as { logout_url?: string }
+  return data.logout_url ?? null
 }
 
 function authHeader() {
@@ -164,50 +186,28 @@ function authHeader() {
   return { Authorization: `Bearer ${token}` }
 }
 
-export async function listPendingAccounts(): Promise<PendingAccount[]> {
-  const url = `${base()}/pending-accounts`
-  const r = await fetch(url, {
-    method: 'GET',
-    headers: {
-      ...authHeader(),
-    },
-  })
-  const text = await r.text()
-  if (!r.ok) {
-    throw new Error(parseApiError(text, r.status))
+export async function adminCreateUserRequest(payload: AdminCreateUserPayload): Promise<{ id?: string; username?: string; message?: string }> {
+  const body: Record<string, string> = {
+    username: payload.username.trim(),
+    password: payload.password,
+    confirm_password: payload.confirmPassword,
+    role: payload.role,
   }
-  const data = JSON.parse(text) as { items: PendingAccount[] }
-  return data.items ?? []
-}
+  if (payload.email?.trim()) body.email = payload.email.trim()
+  if (payload.firstName?.trim()) body.first_name = payload.firstName.trim()
+  if (payload.lastName?.trim()) body.last_name = payload.lastName.trim()
 
-export async function approvePendingAccount(userId: string): Promise<string> {
-  const url = `${base()}/pending-accounts/${encodeURIComponent(userId)}/approve`
-  const r = await fetch(url, {
+  const response = await fetch(`${resolveApiBase(import.meta.env.VITE_ADMIN_API_URL as string | undefined, '/api/admin')}/users`, {
     method: 'POST',
     headers: {
+      'Content-Type': 'application/json',
       ...authHeader(),
     },
+    body: JSON.stringify(body),
   })
-  const text = await r.text()
-  if (!r.ok) {
-    throw new Error(parseApiError(text, r.status))
+  const text = await readResponseText(response)
+  if (!response.ok) {
+    throw new Error(parseApiError(text, response.status))
   }
-  const data = JSON.parse(text) as { message?: string }
-  return data.message ?? 'Compte valide.'
-}
-
-export async function rejectPendingAccount(userId: string): Promise<string> {
-  const url = `${base()}/pending-accounts/${encodeURIComponent(userId)}/reject`
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: {
-      ...authHeader(),
-    },
-  })
-  const text = await r.text()
-  if (!r.ok) {
-    throw new Error(parseApiError(text, r.status))
-  }
-  const data = JSON.parse(text) as { message?: string }
-  return data.message ?? 'Compte refuse.'
+  return text ? (JSON.parse(text) as { id?: string; username?: string; message?: string }) : {}
 }

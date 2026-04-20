@@ -2,7 +2,7 @@ import type { ReactElement } from 'react'
 import { createBrowserRouter, Navigate, useLocation, useParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { DashboardLayout } from '../layouts/DashboardLayout'
-import { ForgotPasswordPage, HelpPage, LoginPage, RegistrationClosedPage, ValidateAccountPage } from '../pages/AuthPages'
+import { AuthCallbackPage, ForgotPasswordPage, HelpPage, LoginPage, RegistrationClosedPage, ValidateAccountPage } from '../pages/AuthPages'
 import {
   AdminValidateAccountsPage,
   AdminProfilePage,
@@ -70,6 +70,7 @@ function AccountApprovalsRedirect() {
 
 export const router = createBrowserRouter([
   { path: '/', element: <LoginPage /> },
+  { path: '/auth/callback', element: <AuthCallbackPage /> },
   { path: '/register', element: <RegistrationClosedPage /> },
   { path: '/forgot-password', element: <ForgotPasswordPage /> },
   { path: '/validate-account', element: <ValidateAccountPage /> },

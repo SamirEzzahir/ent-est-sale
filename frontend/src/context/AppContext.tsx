@@ -2,30 +2,27 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import { users } from '../data/mockData'
 import type { Role, User } from '../types'
-import { authApiConfigured, buildUserFromAuthUser, loginRequest, refreshSession } from '../lib/authApi'
+import {
+  fetchCurrentUser,
+  loginRequest,
+  logoutRequest,
+  refreshSession,
+  restoreUserFromToken,
+} from '../lib/authApi'
 import { clearStoredTokens, getStoredAccessToken } from '../lib/authStorage'
-import { appRoleFromRealmAccess, decodeJwtPayload, isTokenExpired } from '../lib/jwt'
+import { isTokenExpired } from '../lib/jwt'
 
 interface AppContextValue {
   isAuthenticated: boolean
   isSessionReady: boolean
   currentRole: Role
   currentUser: User
-  login: (email: string, password: string) => Promise<Role>
-  logout: () => void
+  login: (identifier: string, password: string) => Promise<Role>
+  completeLogin: (user: User) => void
+  logout: () => Promise<void>
 }
 
 const AppContext = createContext<AppContextValue | undefined>(undefined)
-
-function userFromTokenPayload(payload: Record<string, unknown>, fallbackEmail: string): { role: Role; email: string; sub: string } {
-  const role = appRoleFromRealmAccess(payload)
-  if (!role) {
-    throw new Error('Token sans role ENT (ADMIN, TEACHER, STUDENT)')
-  }
-  const email = String(payload.email ?? payload.preferred_username ?? fallbackEmail)
-  const sub = String(payload.sub ?? '')
-  return { role, email, sub }
-}
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [isSessionReady, setIsSessionReady] = useState(false)
@@ -33,12 +30,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentRole, setCurrentRole] = useState<Role>('student')
   const [currentUser, setCurrentUser] = useState<User>(() => users[0])
 
-  const logout = useCallback(() => {
+  const applyAuthenticatedUser = useCallback((user: User) => {
+    setCurrentRole(user.role)
+    setCurrentUser(user)
+    setIsAuthenticated(true)
+  }, [])
+
+  const clearSessionState = useCallback(() => {
     clearStoredTokens()
     setIsAuthenticated(false)
     setCurrentRole('student')
     setCurrentUser(users[0])
   }, [])
+
+  const logout = useCallback(async () => {
+    const hadSession = Boolean(getStoredAccessToken())
+    clearSessionState()
+    if (!hadSession) return
+
+    try {
+      const logoutUrl = await logoutRequest()
+      if (logoutUrl) {
+        window.location.href = logoutUrl
+      }
+    } catch {
+      // Local session is already cleared; ignore remote logout failures.
+    }
+  }, [clearSessionState])
 
   const bootstrapSession = useCallback(async () => {
     const token = getStoredAccessToken()
@@ -46,56 +64,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setIsAuthenticated(false)
       return
     }
-    if (!authApiConfigured()) {
-      clearStoredTokens()
-      setIsAuthenticated(false)
-      return
-    }
+
     try {
-      let active = token
-      if (isTokenExpired(active)) {
+      if (isTokenExpired(token)) {
         const refreshed = await refreshSession()
         if (!refreshed) {
-          setIsAuthenticated(false)
+          clearSessionState()
           return
         }
-        active = refreshed.access
-        setCurrentRole(refreshed.user.role)
-        setCurrentUser(refreshed.user)
-        setIsAuthenticated(true)
+        applyAuthenticatedUser(refreshed.user)
         return
       }
-      const payload = decodeJwtPayload(active)
-      const { role, email, sub } = userFromTokenPayload(payload, '')
-      setCurrentRole(role)
-      setCurrentUser(
-        buildUserFromAuthUser({
-          id: sub,
-          email,
-          role: role.toUpperCase(),
-        }),
-      )
-      setIsAuthenticated(true)
+
+      const restoredUser = restoreUserFromToken(token)
+      applyAuthenticatedUser(restoredUser)
+
+      try {
+        const freshUser = await fetchCurrentUser(token)
+        applyAuthenticatedUser(freshUser)
+      } catch {
+        // Token payload is enough to keep the session alive locally.
+      }
     } catch {
-      clearStoredTokens()
-      setIsAuthenticated(false)
+      clearSessionState()
     }
-  }, [])
+  }, [applyAuthenticatedUser, clearSessionState])
 
   useEffect(() => {
     void bootstrapSession().finally(() => setIsSessionReady(true))
   }, [bootstrapSession])
 
-  const login = useCallback(async (email: string, password: string) => {
-    if (!authApiConfigured()) {
-      throw new Error('Definir VITE_AUTH_API_URL (ex: http://localhost:8000)')
-    }
-    const { user } = await loginRequest(email, password)
-    setCurrentRole(user.role)
-    setCurrentUser(user)
-    setIsAuthenticated(true)
-    return user.role
-  }, [])
+  const login = useCallback(
+    async (identifier: string, password: string) => {
+      const { user } = await loginRequest(identifier, password)
+      applyAuthenticatedUser(user)
+      return user.role
+    },
+    [applyAuthenticatedUser],
+  )
+
+  const completeLogin = useCallback(
+    (user: User) => {
+      applyAuthenticatedUser(user)
+    },
+    [applyAuthenticatedUser],
+  )
 
   const value: AppContextValue = useMemo(
     () => ({
@@ -104,9 +117,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       currentRole,
       currentUser,
       login,
+      completeLogin,
       logout,
     }),
-    [isAuthenticated, isSessionReady, currentRole, currentUser, login, logout],
+    [isAuthenticated, isSessionReady, currentRole, currentUser, login, completeLogin, logout],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

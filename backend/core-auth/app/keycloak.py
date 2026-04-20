@@ -67,12 +67,13 @@ def validate_keycloak_token(token: str) -> dict:
         logger.warning("Keycloak token validation failed: %s", exc)
         raise HTTPException(status_code=401, detail=f"Invalid Keycloak token: {exc}")
 
+    sub = payload.get("sub", "")
     username = payload.get("preferred_username") or payload.get("sub")
     email = payload.get("email", "")
     realm_roles = payload.get("realm_access", {}).get("roles", [])
     role = _pick_role(realm_roles)
 
-    return {"username": username, "role": role, "email": email}
+    return {"id": sub, "username": username, "role": role, "email": email}
 
 
 def get_keycloak_login_url(redirect_uri: str) -> str:
@@ -103,6 +104,45 @@ def exchange_code_for_token(code: str, redirect_uri: str) -> dict:
     except httpx.HTTPStatusError as exc:
         logger.error("Token exchange failed: %s", exc.response.text)
         raise HTTPException(status_code=401, detail="Token exchange failed")
+
+
+def exchange_password_for_token(username: str, password: str) -> dict:
+    token_url = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
+    data = {
+        "grant_type": "password",
+        "client_id": KEYCLOAK_CLIENT_ID,
+        "username": username,
+        "password": password,
+    }
+    if KEYCLOAK_CLIENT_SECRET:
+        data["client_secret"] = KEYCLOAK_CLIENT_SECRET
+
+    try:
+        resp = httpx.post(token_url, data=data, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPStatusError as exc:
+        logger.error("Password grant failed: %s", exc.response.text)
+        raise HTTPException(status_code=401, detail="Invalid username/email or password")
+
+
+def refresh_keycloak_token(refresh_token: str) -> dict:
+    token_url = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
+    data = {
+        "grant_type": "refresh_token",
+        "client_id": KEYCLOAK_CLIENT_ID,
+        "refresh_token": refresh_token,
+    }
+    if KEYCLOAK_CLIENT_SECRET:
+        data["client_secret"] = KEYCLOAK_CLIENT_SECRET
+
+    try:
+        resp = httpx.post(token_url, data=data, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPStatusError as exc:
+        logger.error("Refresh grant failed: %s", exc.response.text)
+        raise HTTPException(status_code=401, detail="Refresh token invalid or expired")
 
 
 def get_keycloak_logout_url(post_logout_redirect_uri: str) -> str:
