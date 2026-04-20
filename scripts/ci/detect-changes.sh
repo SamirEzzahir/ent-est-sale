@@ -14,7 +14,7 @@ CHANGED_FILES=$(git diff --name-only "$BASE_COMMIT" "$CURRENT_COMMIT")
 
 FRONTEND_CHANGED="false"
 BACKENDS=""
-
+ 
 # Detect frontend changes
 if echo "$CHANGED_FILES" | grep -q '^frontend/'; then
   FRONTEND_CHANGED="true"
