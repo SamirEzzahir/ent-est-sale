@@ -76,7 +76,7 @@ export function LoginPage() {
             {error}
           </p>
         ) : null}
-        <label className="field">
+{/*         <label className="field">
           <span>Nom d'utilisateur ou email</span>
           <input
             name="identifier"
@@ -101,7 +101,7 @@ export function LoginPage() {
         </label>
         <button className="primary-btn" type="submit" disabled={pending || redirecting}>
           {pending ? 'Connexion...' : 'Se connecter'}
-        </button>
+        </button> */}
         <button
           className="ghost-btn"
           type="button"

@@ -17,7 +17,11 @@
       "Bash(npm run *)",
       "Bash(docker-compose -f \"c:/Users/samir/Desktop/IAWM/Semister 6/DevOps et cloud2/chorok/ent-est-sale/docker-compose.yml\" ps)",
       "Bash(docker-compose -f \"c:/Users/samir/Desktop/IAWM/Semister 6/DevOps et cloud2/chorok/ent-est-sale/docker-compose.yml\" up -d --build frontend)",
-      "Bash(curl -s http://localhost:80)"
+      "Bash(curl -s http://localhost:80)",
+      "Bash(docker-compose -f \"c:/Users/samir/Desktop/IAWM/Semister 6/DevOps et cloud2/chorok/ent-est-sale/docker-compose.yml\" restart course-service frontend)",
+      "Bash(docker build *)",
+      "Bash(git checkout *)",
+      "Bash(ipconfig)"
     ]
   }
 }

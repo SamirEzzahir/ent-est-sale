@@ -28,8 +28,8 @@
       "serviceAccountsEnabled": false,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
-      "redirectUris": ["http://localhost/*", "http://localhost:5173/*"],
-      "webOrigins": ["http://localhost", "http://localhost:5173"],
+      "redirectUris": ["http://localhost/*", "http://localhost:5173/*", "http://192.168.1.100/*", "http://192.168.1.100:5173/*"],
+      "webOrigins": ["http://localhost", "http://localhost:5173", "http://192.168.1.100", "http://192.168.1.100:5173"],
       "protocol": "openid-connect",
       "attributes": {
         "access.token.lifespan": "86400"

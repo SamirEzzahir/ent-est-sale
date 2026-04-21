@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Bell, BookOpen, CalendarClock, FileUp, Headset, NotebookPen, ShieldCheck, Wrench } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import { adminStats, assignments, courses, events, forumTopics, messages, notifications, users } from '../data/mockData'
 import { Badge, Card, EmptyState, ErrorState, LoadingState, PageHeader, SearchField } from '../components/ui'
 import { entContent } from '../config/content'
 import { listRemoteFiles, getFileBlob, type RemoteFileItem } from '../lib/downloadApi'
@@ -12,15 +13,9 @@ import {
   adminListUsersRequest,
   adminDeleteUserRequest,
   adminUpdateUserRequest,
-  fetchCurrentUser,
   type AppRealmRole,
   type AdminUpdateUserPayload,
 } from '../lib/authApi'
-import { listCourses, getCourse, type Course } from '../lib/courseApi'
-import { listAssignments, type Assignment } from '../lib/assignmentApi'
-import { getMyGrades, type Grade } from '../lib/gradeApi'
-import { getMessages, getNotifications, type Message, type Notification } from '../lib/notificationApi'
-import { getExams, type Exam } from '../lib/scheduleApi'
 
 function RoleScopeNote({ module }: { module: string }) {
   const { currentRole } = useAppContext()
@@ -74,54 +69,20 @@ export function DashboardPage() {
   const [activeTab, setActiveTab] = useState(entContent.dashboard.tabs[0])
   const [isNoticeVisible, setIsNoticeVisible] = useState(true)
   const [activeMetric, setActiveMetric] = useState(0)
-  const [courseCount, setCourseCount] = useState(0)
-  const [assignmentCount, setAssignmentCount] = useState(0)
-  const [examCount, setExamCount] = useState(0)
-  const [messageCount, setMessageCount] = useState(0)
-  const [averageGrade, setAverageGrade] = useState('N/A')
-  const [userCount, setUserCount] = useState(0)
-
-  useEffect(() => {
-    const loadDashboardData = async () => {
-      try {
-        const [courses, assignments, exams, messages, grades, users] = await Promise.all([
-          listCourses().catch(() => []),
-          listAssignments().catch(() => []),
-          getExams().catch(() => []),
-          getMessages().catch(() => []),
-          getMyGrades().catch(() => []),
-          currentRole === 'admin' ? adminListUsersRequest().catch(() => []) : Promise.resolve([]),
-        ])
-
-        setCourseCount(courses.length)
-        setAssignmentCount(assignments.length)
-        setExamCount(exams.length)
-        setMessageCount(messages.filter((m: any) => !m.read).length)
-        if (grades.length > 0) {
-          const avg = (grades.reduce((sum: number, g: Grade) => sum + g.score, 0) / grades.length).toFixed(2)
-          setAverageGrade(`${avg}/20`)
-        }
-        setUserCount(users.length)
-      } catch (err) {
-        console.error('Failed to load dashboard data:', err)
-      }
-    }
-    loadDashboardData()
-  }, [currentRole])
 
   const dashboardByRole = {
     student: {
       roleLabel: 'Etudiant',
       subtitle: 'Suivez vos cours, devoirs, examens et notifications academiques.',
       heroStats: [
-        { value: `${Math.round((assignmentCount / Math.max(1, assignmentCount + 5)) * 100)}%`, label: 'Progression semestre' },
-        { value: `${assignmentCount}`, label: 'Devoirs en attente' },
-        { value: `${examCount}`, label: 'Examens a venir' },
+        { value: '87%', label: 'Progression semestre' },
+        { value: '4', label: 'Devoirs en attente' },
+        { value: '2', label: 'Examens a venir' },
       ],
       summaryCards: [
-        { label: 'Moyenne generale', value: averageGrade, badge: 'Bon niveau', badgeType: 'info' as const },
+        { label: 'Moyenne generale', value: '15.8/20', badge: 'Bon niveau', badgeType: 'info' as const },
         { label: 'Presence', value: '96%', badge: '+2%', badgeType: 'success' as const },
-        { label: 'Messages non lus', value: `${messageCount}`, badge: 'Nouveau', badgeType: 'warning' as const },
+        { label: 'Messages non lus', value: '7', badge: 'Nouveau', badgeType: 'warning' as const },
         { label: 'Ressources vues', value: '42', badge: 'Cette semaine', badgeType: 'info' as const },
       ],
       priorities: ['Consulter les notes publiees', 'Finaliser le devoir Frontend', "Verifier l'horaire des examens"],
@@ -136,9 +97,9 @@ export function DashboardPage() {
       roleLabel: 'Enseignant',
       subtitle: 'Pilotez vos modules, publications, corrections et echanges avec les etudiants.',
       heroStats: [
-        { value: `${courseCount}`, label: 'Cours actifs' },
-        { value: `${assignmentCount}`, label: 'Copies a corriger' },
-        { value: `${messageCount}`, label: 'Messages recus' },
+        { value: '6', label: 'Cours actifs' },
+        { value: '31', label: 'Copies a corriger' },
+        { value: '12', label: 'Messages recus' },
       ],
       summaryCards: [
         { label: 'Ressources publiees', value: '126', badge: 'Ce semestre', badgeType: 'info' as const },
@@ -158,13 +119,13 @@ export function DashboardPage() {
       roleLabel: 'Administrateur',
       subtitle: 'Supervisez les micro-services ENT, les utilisateurs et les operations systeme.',
       heroStats: [
-        { value: '5', label: 'Micro-services coeur' },
+        { value: '4', label: 'Micro-services coeur' },
         { value: '99.98%', label: 'Disponibilite' },
         { value: '93', label: 'Tickets support' },
       ],
       summaryCards: [
-        { label: 'Utilisateurs actifs', value: `${userCount}`, badge: '+5.2%', badgeType: 'success' as const },
-        { label: 'Cours en ligne', value: `${courseCount}`, badge: 'Modules publies', badgeType: 'info' as const },
+        { label: 'Utilisateurs actifs', value: '2 483', badge: '+5.2%', badgeType: 'success' as const },
+        { label: 'Cours en ligne', value: '148', badge: 'Modules publies', badgeType: 'info' as const },
         { label: 'Fichiers MinIO', value: '1.8 TB', badge: 'Stockage ENT', badgeType: 'warning' as const },
         { label: 'Alertes systeme', value: '3', badge: 'A verifier', badgeType: 'warning' as const },
       ],
@@ -287,41 +248,20 @@ export function CoursesPage() {
   const base = rolePrefix ? `/${rolePrefix}` : ''
   const { currentRole } = useAppContext()
   const canPublishCourse = currentRole === 'teacher' || currentRole === 'admin'
-  const [courses, setCourses] = useState<Course[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-
-  useEffect(() => {
-    const loadCourses = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await listCourses()
-        setCourses(data)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement des cours')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadCourses()
-  }, [])
-
+  const [category, setCategory] = useState('all')
   const filteredCourses = useMemo(
     () =>
       courses.filter((course) => {
         const matchesQuery =
-          course.course_name.toLowerCase().includes(query.toLowerCase()) ||
-          course.course_code.toLowerCase().includes(query.toLowerCase()) ||
-          course.teacher_name.toLowerCase().includes(query.toLowerCase())
-        return matchesQuery
+          course.title.toLowerCase().includes(query.toLowerCase()) ||
+          course.code.toLowerCase().includes(query.toLowerCase()) ||
+          course.teacher.toLowerCase().includes(query.toLowerCase())
+        const matchesCategory = category === 'all' || course.category === category
+        return matchesQuery && matchesCategory
       }),
-    [courses, query],
+    [query, category],
   )
-
-  if (loading) return <><PageHeader title="Gestion des cours" subtitle="Liste des modules, ressources et progression." /><LoadingState /></>
-  if (error) return <><PageHeader title="Gestion des cours" subtitle="Liste des modules, ressources et progression." /><ErrorState message={error} /></>
 
   return (
     <>
@@ -333,14 +273,20 @@ export function CoursesPage() {
       <RoleScopeNote module="courses" />
       <div className="toolbar">
         <SearchField placeholder="Rechercher un cours, enseignant ou code..." value={query} onChange={setQuery} />
+        <select value={category} onChange={(event) => setCategory(event.target.value)}>
+          <option value="all">Toutes categories</option>
+          <option value="Informatique">Informatique</option>
+          <option value="Web">Web</option>
+        </select>
         <Badge value={`${filteredCourses.length} resultats`} />
       </div>
       <div className="grid cols-2">
         {filteredCourses.map((course) => (
-          <Card key={course.course_id} title={course.course_name} action={<Badge value={`${course.credits} credits`} type="info" />}>
-            <p className="muted">{course.course_code} - {course.teacher_name}</p>
-            <p>Semestre {course.semester}, Annee {course.academic_year}</p>
-            <Link className="sub-link" to={`${base}/cours/${course.course_id}`}>Voir details</Link>
+          <Card key={course.id} title={course.title} action={<Badge value={`${course.progress}%`} type="info" />}>
+            <p className="muted">{course.code} - {course.teacher}</p>
+            <p>{course.credits} credits</p>
+            <div className="progress-line"><span style={{ width: `${course.progress}%` }} /></div>
+            <Link className="sub-link" to={`${base}/cours/${course.id}`}>Voir details</Link>
           </Card>
         ))}
       </div>
@@ -357,46 +303,16 @@ export function CoursesPage() {
 }
 
 export function CourseDetailsPage() {
-  const { courseId } = useParams<{ courseId: string }>()
-  const [course, setCourse] = useState<Course | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadCourse = async () => {
-      if (!courseId) {
-        setError('Course ID not found')
-        setLoading(false)
-        return
-      }
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await getCourse(courseId)
-        setCourse(data)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement du cours')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadCourse()
-  }, [courseId])
-
-  if (loading) return <><PageHeader title="Chargement..." subtitle="Ressources pedagogiques et suivi." /><LoadingState /></>
-  if (error || !course) return <><PageHeader title="Erreur" subtitle="Ressources pedagogiques et suivi." /><ErrorState message={error || 'Cours non trouve'} /></>
-
+  const course = courses[0]
   return (
     <>
-      <PageHeader title={`Details - ${course.course_name}`} subtitle="Ressources pedagogiques et suivi." />
+      <PageHeader title={`Details - ${course.title}`} subtitle="Ressources pedagogiques et suivi." />
       <RoleScopeNote module="courses" />
       <div className="grid cols-2">
-      <Card title="Informations du cours">
-        <p><strong>Code:</strong> {course.course_code}</p>
-        <p><strong>Enseignant:</strong> {course.teacher_name}</p>
-        <p><strong>Description:</strong> {course.description || 'Pas de description'}</p>
-        <p><strong>Credits:</strong> {course.credits}</p>
-        <p><strong>Semestre:</strong> {course.semester}, Annee {course.academic_year}</p>
+      <Card title="Ressources / fichiers">
+        <ul className="list">
+          {course.resources.map((resource) => <li key={resource.name}>{resource.name} <span>{resource.type} - {resource.size}</span></li>)}
+        </ul>
       </Card>
       <Card title="Flux de travail du projet">
         <ul className="timeline">
@@ -672,54 +588,27 @@ export function FilesPage() {
 }
 
 export function MessagingPage() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadMessages = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await getMessages()
-        setMessages(data)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement des messages')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadMessages()
-  }, [])
-
-  if (loading) return <><PageHeader title="Messagerie / Inbox" subtitle="Conversations, messages recus et notifications." /><LoadingState /></>
-  if (error) return <><PageHeader title="Messagerie / Inbox" subtitle="Conversations, messages recus et notifications." /><ErrorState message={error} /></>
-
-  const unreadMessages = messages.filter((m) => !m.read)
-
   return (
     <>
       <PageHeader title="Messagerie / Inbox" subtitle="Conversations, messages recus et notifications." />
       <RoleScopeNote module="messaging" />
       <div className="grid cols-2">
-        <Card title={`Inbox (${unreadMessages.length} non lus)`}>
+        <Card title="Inbox">
           <ul className="list">
             {messages.map((m) => (
-              <li key={m.message_id} className={`message-item ${!m.read ? 'unread' : ''}`}>
+              <li key={m.id} className={`message-item ${m.unread ? 'unread' : ''}`}>
                 <div>
                   <strong>{m.subject}</strong>
-                  <p>{m.content.substring(0, 100)}</p>
-                  <span>{m.sender_id} - {new Date(m.sent_date || '').toLocaleDateString()}</span>
+                  <p>{m.preview}</p>
+                  <span>{m.from} - {m.date}</span>
                 </div>
-                {!m.read && <Badge value="Nouveau" type="info" />}
+                {m.unread && <Badge value="Nouveau" type="info" />}
               </li>
             ))}
           </ul>
-          {!messages.length && <EmptyState message="Aucun message" />}
         </Card>
         <Card title="Notifications">
-          <p className="muted">Consultez le panneau des notifications pour plus de details.</p>
-          <Link to="/notifications" className="primary-btn">Voir les notifications</Link>
+          <ul className="list">{notifications.map((n) => <li key={n.id} className="notification-item">{n.label}</li>)}</ul>
         </Card>
       </div>
       <Card title="Conformite Microservice - Messagerie et notifications">
@@ -733,38 +622,14 @@ export function MessagingPage() {
 }
 
 export function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadMessages = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await getMessages()
-        setMessages(data)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement des messages')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadMessages()
-  }, [])
-
-  if (loading) return <><PageHeader title="Conversation" subtitle="Chat temps reel." /><LoadingState /></>
-  if (error) return <><PageHeader title="Conversation" subtitle="Chat temps reel." /><ErrorState message={error} /></>
-
   return (
     <>
-      <PageHeader title="Conversation" subtitle="Chat temps reel." />
+      <PageHeader title="Conversation" subtitle="Chat temps reel (mock)." />
       <RoleScopeNote module="messaging" />
       <Card>
         <div className="chat-window">
-          {messages.slice(0, 5).map((m) => (
-            <p key={m.message_id}><strong>{m.sender_id}:</strong> {m.content}</p>
-          ))}
+          <p><strong>Pr. Idrissi:</strong> Bonjour, n'oubliez pas la soumission du projet.</p>
+          <p><strong>Vous:</strong> Merci, je finalise l'interface aujourd'hui.</p>
         </div>
         <div className="toolbar"><input placeholder="Ecrire un message..." /><button className="primary-btn">Envoyer</button></div>
       </Card>
@@ -779,44 +644,18 @@ export function ChatPage() {
 }
 
 export function NotificationsPage() {
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadNotifications = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await getNotifications()
-        setNotifications(data)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement des notifications')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadNotifications()
-  }, [])
-
-  if (loading) return <><PageHeader title="Panneau des notifications" subtitle="Alertes academiques et systeme ENT." /><LoadingState /></>
-  if (error) return <><PageHeader title="Panneau des notifications" subtitle="Alertes academiques et systeme ENT." /><ErrorState message={error} /></>
-
-  const unreadCount = notifications.filter((n) => !n.read).length
-
   return (
     <>
-      <PageHeader title={`Panneau des notifications (${unreadCount} non lues)`} subtitle="Alertes academiques et systeme ENT." />
+      <PageHeader title="Panneau des notifications" subtitle="Alertes academiques et systeme ENT." />
       <RoleScopeNote module="messaging" />
       <Card>
         <ul className="list">
           {notifications.map((n) => (
-            <li key={n.notification_id} className="forum-item">
-              <span>{n.title} - {n.message}</span> <Badge value={n.type} />
+            <li key={n.id} className="forum-item">
+              <span>{n.label}</span> <Badge value={n.type} />
             </li>
           ))}
         </ul>
-        {!notifications.length && <EmptyState message="Aucune notification" />}
       </Card>
       <Card title="Conformite notifications">
         <ul className="list">
@@ -829,51 +668,34 @@ export function NotificationsPage() {
 }
 
 export function CalendarPage() {
-  const [exams, setExams] = useState<Exam[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadExams = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await getExams()
-        setExams(data)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement du calendrier')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadExams()
-  }, [])
-
-  if (loading) return <><PageHeader title="Calendrier / Emploi du temps" subtitle="Planning academique et examens." /><LoadingState /></>
-  if (error) return <><PageHeader title="Calendrier / Emploi du temps" subtitle="Planning academique et examens." /><ErrorState message={error} /></>
-
   return (
     <>
-      <PageHeader title="Calendrier / Emploi du temps" subtitle="Planning academique et examens." />
+      <PageHeader title="Calendrier et emploi du temps" subtitle="Vue calendrier, semaine et examens." />
       <RoleScopeNote module="calendar" />
-      <Card title="Examens a venir">
-        <ul className="list">
-          {exams.map((exam) => (
-            <li key={exam.exam_id} className="forum-item">
-              <div>
-                <strong>{exam.title}</strong>
-                <span>{exam.exam_date} - {exam.room}</span>
-              </div>
-              <Badge value={`${exam.duration_minutes} min`} type="info" />
-            </li>
-          ))}
+      <div className="grid cols-2">
+        <Card title="Evenements">
+          <ul className="list">
+            {events.map((event) => <li key={event.id} className="forum-item"><div><strong>{event.title}</strong><span>{event.date} ({event.location})</span></div><Badge value={event.type} /></li>)}
+          </ul>
+        </Card>
+        <Card title="Semaine (mock grid)">
+          <div className="week-grid">
+            {['Lun','Mar','Mer','Jeu','Ven'].map((d)=><div key={d}><strong>{d}</strong><p>08:30 - 17:30</p></div>)}
+          </div>
+        </Card>
+      </div>
+      <Card title="Timeline des evenements">
+        <ul className="timeline">
+          <li><span>09:00</span> Cours React Avance - Salle B12</li>
+          <li><span>12:00</span> Pause et permanence pedagogique</li>
+          <li><span>14:00</span> Examen Bases de Donnees - Amphi 2</li>
+          <li><span>16:30</span> Reunion Club IA - Lab Innovation</li>
         </ul>
-        {!exams.length && <EmptyState message="Aucun examen planifie" />}
       </Card>
-      <Card title="Conformite calendrier">
+      <Card title="Conformite Microservice - Calendrier / Emploi du temps">
         <ul className="list">
-          <li className="forum-item"><div><strong>Synchronisation</strong><span>Planning coordonne avec tous les services (calendrier institutionnel).</span></div><Badge value="Synchro en temps reel" type="success" /></li>
-          <li className="forum-item"><div><strong>Notification</strong><span>Alertes etudiants/enseignants sur modifications calendrier.</span></div><Badge value="RabbitMQ/Events" type="info" /></li>
+          <li className="forum-item"><div><strong>Planification</strong><span>Calendrier des cours, examens et evenements academiques.</span></div><Badge value="Interne ENT" type="info" /></li>
+          <li className="forum-item"><div><strong>Integration</strong><span>Extensible vers Google Calendar ou service interne dedie.</span></div><Badge value="Extensible" /></li>
         </ul>
       </Card>
     </>
@@ -881,41 +703,11 @@ export function CalendarPage() {
 }
 
 export function ExamSchedulePage() {
-  const [exams, setExams] = useState<Exam[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadExams = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await getExams()
-        setExams(data)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement des examens')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadExams()
-  }, [])
-
-  if (loading) return <><PageHeader title="Calendrier des examens" subtitle="Sessions et salles d'examen." /><LoadingState /></>
-  if (error) return <><PageHeader title="Calendrier des examens" subtitle="Sessions et salles d'examen." /><ErrorState message={error} /></>
-
   return (
     <>
       <PageHeader title="Calendrier des examens" subtitle="Sessions et salles d'examen." />
       <RoleScopeNote module="exams" />
-      <Card>
-        <ul className="list">
-          {exams.map((exam) => (
-            <li key={exam.exam_id}>{exam.title} - {exam.exam_date} - {exam.room}</li>
-          ))}
-        </ul>
-        {!exams.length && <EmptyState message="Aucun examen planifie" />}
-      </Card>
+      <Card><ul className="list">{events.filter((e) => e.type === 'exam').map((exam) => <li key={exam.id}>{exam.title} - {exam.date} - {exam.location}</li>)}</ul></Card>
       <Card title="Regles de session">
         <ul className="list">
           <li className="forum-item"><div><strong>Publication</strong><span>Calendrier publie par scolarite via service examens.</span></div><Badge value="Admin" type="info" /></li>
@@ -927,12 +719,15 @@ export function ExamSchedulePage() {
 }
 
 export function ForumPage() {
+  const { rolePrefix } = useParams()
+  const base = rolePrefix ? `/${rolePrefix}` : ''
   return (
     <>
       <PageHeader title="Forum et entraide" subtitle="Discussions academiques et communautaires." />
       <RoleScopeNote module="forum" />
-      <Card title="Forum">
-        <EmptyState message="Bientôt disponible - Service forum en preparation." />
+      <div className="toolbar"><SearchField placeholder="Rechercher un sujet..." /><Link to={`${base}/forum/thread`} className="primary-btn">Voir une discussion</Link></div>
+      <Card><ul className="list">{forumTopics.map((topic) => <li key={topic.id} className="forum-item"><div><strong>{topic.title}</strong><span>{topic.author} - {topic.replies} reponses</span></div><Badge value={topic.tag} /></li>)}</ul>
+        <div className="toolbar"><button className="ghost-btn small">1</button><button className="ghost-btn small">2</button><button className="ghost-btn small">3</button></div>
       </Card>
       <Card title="Conformite Microservice - Forum et chat">
         <ul className="list">
@@ -1199,55 +994,11 @@ export function AssistantPage() {
 }
 
 export function ExamsPage() {
-  const [exams, setExams] = useState<Exam[]>([])
-  const [assignments, setAssignments] = useState<Assignment[]>([])
-  const [loadingExams, setLoadingExams] = useState(true)
-  const [loadingAssignments, setLoadingAssignments] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setError(null)
-        const [examsData, assignmentsData] = await Promise.all([
-          getExams().catch(() => []),
-          listAssignments().catch(() => []),
-        ])
-        setExams(examsData)
-        setAssignments(assignmentsData)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement')
-      } finally {
-        setLoadingExams(false)
-        setLoadingAssignments(false)
-      }
-    }
-    loadData()
-  }, [])
-
-  if (loadingExams || loadingAssignments) return <><PageHeader title="Examens" subtitle="Sessions a venir et preparation." /><LoadingState /></>
-  if (error) return <><PageHeader title="Examens" subtitle="Sessions a venir et preparation." /><ErrorState message={error} /></>
-
   return (
     <>
       <PageHeader title="Examens" subtitle="Sessions a venir et preparation." />
       <RoleScopeNote module="exams" />
-      <Card title="Examens planifies">
-        <ul className="list">
-          {exams.map((exam) => (
-            <li key={exam.exam_id}>{exam.title} - {exam.exam_date}</li>
-          ))}
-        </ul>
-        {!exams.length && <EmptyState message="Aucun examen" />}
-      </Card>
-      <Card title="Devoirs associes">
-        <ul className="list">
-          {assignments.map((assignment) => (
-            <li key={assignment.assignment_id}>{assignment.title} - {assignment.due_date}</li>
-          ))}
-        </ul>
-        {!assignments.length && <EmptyState message="Aucun devoir" />}
-      </Card>
+      <Card><ul className="list">{events.filter((e) => e.type === 'exam').map((exam) => <li key={exam.id}>{exam.title} - {exam.date}</li>)}</ul></Card>
       <Card title="Conformite Microservice - Examens et devoirs">
         <ul className="list">
           <li className="forum-item"><div><strong>Fonctions</strong><span>Soumission, correction et notation en ligne.</span></div><Badge value="Spec PDF" type="info" /></li>
@@ -1260,50 +1011,14 @@ export function ExamsPage() {
 
 export function AssignmentsPage() {
   const { currentRole } = useAppContext()
-  const [assignments, setAssignments] = useState<Assignment[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadAssignments = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await listAssignments()
-        setAssignments(data)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement des devoirs')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadAssignments()
-  }, [])
-
-  if (loading) return <><PageHeader title="Devoirs et soumissions" subtitle="Suivi des assignments et depots." /><LoadingState /></>
-  if (error) return <><PageHeader title="Devoirs et soumissions" subtitle="Suivi des assignments et depots." /><ErrorState message={error} /></>
-
   return (
     <>
       <PageHeader title="Devoirs et soumissions" subtitle="Suivi des assignments et depots." />
       <RoleScopeNote module="exams" />
       <Card>
-        <table className="table">
-          <thead>
-            <tr><th>Devoir</th><th>Cours</th><th>Echeance</th><th></th></tr>
-          </thead>
-          <tbody>
-            {assignments.map((assignment) => (
-              <tr key={assignment.assignment_id}>
-                <td>{assignment.title}</td>
-                <td>{assignment.course_id}</td>
-                <td>{assignment.due_date || 'N/A'}</td>
-                <td><button className="ghost-btn small">{currentRole === 'teacher' ? 'Corriger' : currentRole === 'admin' ? 'Verifier' : 'Soumettre'}</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!assignments.length && <EmptyState message="Aucun devoir" />}
+        <table className="table"><thead><tr><th>Devoir</th><th>Cours</th><th>Echeance</th><th>Statut</th><th></th></tr></thead><tbody>
+          {assignments.map((assignment) => <tr key={assignment.id}><td>{assignment.title}</td><td>{assignment.course}</td><td>{assignment.dueDate}</td><td><Badge value={assignment.status} /></td><td><button className="ghost-btn small">{currentRole === 'teacher' ? 'Corriger' : currentRole === 'admin' ? 'Verifier' : 'Soumettre'}</button></td></tr>)}
+        </tbody></table>
       </Card>
       <Card title="Workflow pedagogique">
         <ul className="timeline">
@@ -1318,43 +1033,11 @@ export function AssignmentsPage() {
 }
 
 export function GradesPage() {
-  const [grades, setGrades] = useState<Grade[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadGrades = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await getMyGrades()
-        setGrades(data)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement des notes')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadGrades()
-  }, [])
-
-  if (loading) return <><PageHeader title="Notes et resultats" subtitle="Resultats des evaluations." /><LoadingState /></>
-  if (error) return <><PageHeader title="Notes et resultats" subtitle="Resultats des evaluations." /><ErrorState message={error} /></>
-
-  const averageGrade = grades.length > 0 ? (grades.reduce((sum, g) => sum + g.score, 0) / grades.length).toFixed(2) : 'N/A'
-
   return (
     <>
       <PageHeader title="Notes et resultats" subtitle="Resultats des evaluations." />
       <RoleScopeNote module="exams" />
-      <Card title={`Moyenne: ${averageGrade}/20`}>
-        <ul className="list">
-          {grades.map((grade) => (
-            <li key={grade.grade_id}>{grade.label || grade.grade_type} - {grade.score}/{grade.max_score}</li>
-          ))}
-        </ul>
-        {!grades.length && <EmptyState message="Aucune note" />}
-      </Card>
+      <Card><ul className="list">{assignments.map((item) => <li key={item.id}>{item.title} - {item.grade ?? 'En attente'}</li>)}</ul></Card>
       <Card title="Conformite notation">
         <ul className="list">
           <li className="forum-item"><div><strong>Cycle evaluation</strong><span>Soumission, correction, notation et publication des resultats.</span></div><Badge value="Examens & devoirs" type="info" /></li>
@@ -1365,37 +1048,16 @@ export function GradesPage() {
   )
 }
 
-function ProfileCard({ roleLabel }: { roleLabel: string }) {
+function ProfileCard({ roleLabel, userIndex }: { roleLabel: string; userIndex: number }) {
   const { rolePrefix } = useParams()
   const base = rolePrefix ? `/${rolePrefix}` : ''
-  const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await fetchCurrentUser()
-        setUser(data)
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement du profil')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadUser()
-  }, [])
-
-  if (loading) return <LoadingState />
-  if (error || !user) return <ErrorState message={error || 'Profil non trouve'} />
-
+  const user = users[userIndex]
   return (
     <Card title={`Profil ${roleLabel}`}>
       <p><strong>{user.name}</strong></p>
       <p>{user.email}</p>
       <p>{user.faculty}</p>
+      <p>{user.level}</p>
       <Link to={`${base}/profiles/edit`} className="sub-link">Modifier profil</Link>
     </Card>
   )
@@ -1406,7 +1068,7 @@ export function StudentProfilePage() {
     <>
       <PageHeader title="Profil etudiant" subtitle="Microservice gestion des utilisateurs." />
       <RoleScopeNote module="profile" />
-      <ProfileCard roleLabel="etudiant" />
+      <ProfileCard roleLabel="etudiant" userIndex={0} />
     </>
   )
 }
@@ -1415,7 +1077,7 @@ export function TeacherProfilePage() {
     <>
       <PageHeader title="Profil enseignant" subtitle="Microservice gestion des utilisateurs." />
       <RoleScopeNote module="profile" />
-      <ProfileCard roleLabel="enseignant" />
+      <ProfileCard roleLabel="enseignant" userIndex={1} />
     </>
   )
 }
@@ -1424,54 +1086,17 @@ export function AdminProfilePage() {
     <>
       <PageHeader title="Profil admin" subtitle="Microservice gestion des utilisateurs." />
       <RoleScopeNote module="profile" />
-      <ProfileCard roleLabel="admin" />
+      <ProfileCard roleLabel="admin" userIndex={2} />
     </>
   )
 }
 
 export function EditProfilePage() {
-  const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [email, setEmail] = useState('')
-
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const data = await fetchCurrentUser()
-        setUser(data)
-        const names = data.name?.split(' ') || ['']
-        setFirstName(names[0] || '')
-        setLastName(names.slice(1).join(' ') || '')
-        setEmail(data.email || '')
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement du profil')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadUser()
-  }, [])
-
-  if (loading) return <><PageHeader title="Edition du profil" subtitle="Mise a jour des informations utilisateur." /><LoadingState /></>
-  if (error || !user) return <><PageHeader title="Edition du profil" subtitle="Mise a jour des informations utilisateur." /><ErrorState message={error || 'Profil non trouve'} /></>
-
   return (
     <>
       <PageHeader title="Edition du profil" subtitle="Mise a jour des informations utilisateur." />
       <RoleScopeNote module="profile" />
-      <Card>
-        <form className="stack">
-          <input placeholder="Prenom" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-          <input placeholder="Nom" value={lastName} onChange={(e) => setLastName(e.target.value)} />
-          <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} type="email" />
-          <button className="primary-btn" type="button">Enregistrer</button>
-        </form>
-      </Card>
+      <Card><form className="stack"><input placeholder="Nom complet" defaultValue={users[0].name} /><input placeholder="Email" defaultValue={users[0].email} /><input placeholder="Filiere" defaultValue={users[0].faculty} /><button className="primary-btn" type="button">Enregistrer</button></form></Card>
       <Card title="Conformite profils utilisateurs">
         <ul className="list">
           <li className="forum-item"><div><strong>Roles pris en charge</strong><span>Etudiant, enseignant et administrateur.</span></div><Badge value="Spec PDF" type="info" /></li>
@@ -1875,57 +1500,25 @@ export function AdminRolesPage() {
 
 export function AdminStatisticsPage() {
   const { currentRole } = useAppContext()
-  const [stats, setStats] = useState<Array<{ label: string; value: string }>>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const loadStats = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const [users, courses] = await Promise.all([
-          adminListUsersRequest().catch(() => []),
-          listCourses().catch(() => []),
-        ])
-        setStats([
-          { label: 'Utilisateurs actifs', value: users.length.toString() },
-          { label: 'Cours en ligne', value: courses.length.toString() },
-          { label: 'Microservices', value: '5' },
-          { label: 'Disponibilite', value: '99.98%' },
-        ])
-      } catch (err: any) {
-        setError(err.message || 'Erreur lors du chargement des statistiques')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadStats()
-  }, [])
-
   if (currentRole !== 'admin') {
     return (
       <>
-        <PageHeader title="Administration - Statistiques" subtitle="Indicateurs ENT en temps reel." />
+        <PageHeader title="Administration - Statistiques" subtitle="Indicateurs ENT en temps reel (mock)." />
         <RoleScopeNote module="admin" />
         <ErrorState message="Acces reserve a un compte administrateur." />
       </>
     )
   }
-
-  if (loading) return <><PageHeader title="Administration - Statistiques" subtitle="Indicateurs ENT en temps reel." /><LoadingState /></>
-  if (error) return <><PageHeader title="Administration - Statistiques" subtitle="Indicateurs ENT en temps reel." /><ErrorState message={error} /></>
-
   return (
     <>
-      <PageHeader title="Administration - Statistiques" subtitle="Indicateurs ENT en temps reel." />
+      <PageHeader title="Administration - Statistiques" subtitle="Indicateurs ENT en temps reel (mock)." />
       <RoleScopeNote module="admin" />
       <div className="grid cols-4">
-        {stats.map((stat) => (
+        {adminStats.map((stat) => (
           <Card key={stat.label}>
             <p className="muted">{stat.label}</p>
             <h2>{stat.value}</h2>
-            <Badge value="En ligne" type="success" />
+            <Badge value={stat.trend} type="success" />
             <div className="progress-line"><span style={{ width: `${Math.min(95, Math.max(35, stat.value.length * 12))}%` }} /></div>
           </Card>
         ))}

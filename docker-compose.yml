@@ -16,6 +16,7 @@ services:
       - upload-service
       - download-service
       - admin-service
+      - ai-assistant-service
     networks:
       - app-network
 
@@ -39,9 +40,8 @@ services:
      # - "8001:8001"
     env_file:
       - .env
-    depends_on:
-      keycloak:
-        condition: service_started
+    # Note: keycloak is in docker-compose.infra.yml
+    # It will be available on the shared app-network
     networks:
       - app-network
 
@@ -55,11 +55,8 @@ services:
     #  - "8002:8002"
     env_file:
       - .env
-    depends_on:
-      minio:
-        condition: service_started
-      cassandra:
-        condition: service_healthy
+    # Note: minio and cassandra are in docker-compose.infra.yml
+    # They will be available on the shared app-network
     networks:
       - app-network
 
@@ -73,11 +70,8 @@ services:
    #   - "8003:8003"
     env_file:
       - .env
-    depends_on:
-      minio:
-        condition: service_started
-      cassandra:
-        condition: service_healthy
+    # Note: minio and cassandra are in docker-compose.infra.yml
+    # They will be available on the shared app-network
     networks:
       - app-network
 
@@ -106,205 +100,21 @@ services:
     env_file:
       - .env
     depends_on:
-      keycloak:
-        condition: service_healthy
-      download-service:
-        condition: service_started
-      ollama:
-        condition: service_started
+      - download-service
+    # Note: keycloak and ollama are in docker-compose.infra.yml
+    # They will be available on the shared app-network
     networks:
       - app-network
 
-  # =====================
-  # COURSE SERVICE
-  # =====================
-  course-service:
-    build: ./backend/course-service
-    container_name: course-service
-   # ports:
-   #  - "8006:8006"
-    env_file:
-      - .env
-    depends_on:
-      cassandra:
-        condition: service_healthy
-      core-auth:
-        condition: service_started
-    networks:
-      - app-network
-
-  # =====================
-  # ASSIGNMENT SERVICE
-  # =====================
-  assignment-service:
-    build: ./backend/assignment-service
-    container_name: assignment-service
-   # ports:
-   #   - "8007:8007"
-    env_file:
-      - .env
-    depends_on:
-      cassandra:
-        condition: service_healthy
-      core-auth:
-        condition: service_started
-    networks:
-      - app-network
-
-  # =====================
-  # GRADE SERVICE
-  # =====================
-  grade-service:
-    build: ./backend/grade-service
-    container_name: grade-service
-   # ports:
-    #  - "8008:8008"
-    env_file:
-      - .env
-    depends_on:
-      cassandra:
-        condition: service_healthy
-      core-auth:
-        condition: service_started
-    networks:
-      - app-network
-
-  # =====================
-  # NOTIFICATION SERVICE
-  # =====================
-  notification-service:
-    build: ./backend/notification-service
-    container_name: notification-service
-   # ports:
-   #   - "8009:8009"
-    env_file:
-      - .env
-    depends_on:
-      cassandra:
-        condition: service_healthy
-      core-auth:
-        condition: service_started
-    networks:
-      - app-network
-
-  # =====================
-  # SCHEDULE SERVICE
-  # =====================
-  schedule-service:
-    build: ./backend/schedule-service
-    container_name: schedule-service
-   # ports:
-   #   - "8010:8010"
-    env_file:
-      - .env
-    depends_on:
-      cassandra:
-        condition: service_healthy
-      core-auth:
-        condition: service_started
-    networks:
-      - app-network
-
-  # =====================
-  # KEYCLOAK  ← all fixes here
-  # =====================
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0
-    container_name: keycloak
-    ports:
-    - "8080:8080"
-    entrypoint:
-    - /bin/sh
-    - -ec
-    - |
-      exec /opt/keycloak/bin/kc.sh start-dev --import-realm --health-enabled=true
-    env_file:
-    - .env
-    environment:
-      KC_HOSTNAME: localhost
-      KC_HOSTNAME_PORT: 8080
-      KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
-    volumes:
-    - ./keycloak:/opt/keycloak/data/import
-    networks:
-    - app-network
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo UP || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 20
-      start_period: 600s
-
-  # =====================
-  # MINIO
-  # =====================
-  minio:
-    image: minio/minio:latest
-    container_name: minio
-    command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    env_file:
-      - .env
-    volumes:
-      - minio-data:/data
-    networks:
-      - app-network
-
-
-  # =====================
-  # OLLAMA
-  # =====================
-  ollama:
-    image: ollama/ollama
-    container_name: ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    networks:
-      - app-network
-
-
-  # =====================
-  # CASSANDRA
-  # =====================
-  cassandra:
-    image: cassandra:4.1
-    container_name: cassandra
-    ports:
-      - "9042:9042"
-    volumes:
-      - cassandra-data:/var/lib/cassandra
-    networks:
-      - app-network
-    healthcheck:
-      test: ["CMD-SHELL", "cqlsh localhost 9042 -e 'describe keyspaces' || exit 1"]
-      interval: 20s
-      timeout: 10s
-      retries: 20
-      start_period: 420s
-
-  cassandra-init:
-    image: cassandra:4.1
-    container_name: cassandra-init
-    depends_on:
-      cassandra:
-        condition: service_healthy
-    volumes:
-      - ./cassandra/init.cql:/init.cql
-    command: cqlsh cassandra -f /init.cql
-    networks:
-      - app-network
-    restart: on-failure
+# ================================================================
+# Infrastructure services moved to docker-compose.infra.yml
+# (Keycloak, Cassandra, MinIO, Ollama)
+# ================================================================
+# Usage:
+#   1. Start infrastructure: docker-compose -f docker-compose.infra.yml up -d
+#   2. Start application:    docker-compose up -d
+#   3. View all:             docker-compose -f docker-compose.infra.yml -f docker-compose.yml ps
+# ================================================================
 
 networks:
   app-network:
-
-volumes:
-  minio-data:
-  cassandra-data:
-  ollama-data:

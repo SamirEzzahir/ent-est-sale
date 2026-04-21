@@ -1,0 +1,114 @@
+# ================================================================
+# INFRASTRUCTURE LAYER - Stable, Non-changing Services
+# ================================================================
+# Usage: docker-compose -f docker-compose.infra.yml up -d
+# This runs ONLY the infrastructure (Keycloak, Cassandra, MinIO, Ollama)
+# Application services run in separate docker-compose.yml
+# ================================================================
+
+services:
+
+  # =====================
+  # KEYCLOAK (Auth Provider)
+  # =====================
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: keycloak
+    ports:
+      - "8080:8080"
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        exec /opt/keycloak/bin/kc.sh start-dev --import-realm --health-enabled=true
+    env_file:
+      - .env
+    environment:
+      KC_HOSTNAME: ${SERVER_HOST}
+      KC_HOSTNAME_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo UP || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 600s
+
+  # =====================
+  # CASSANDRA (Database)
+  # =====================
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh localhost 9042 -e 'describe keyspaces' || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 20
+      start_period: 420s
+
+  # =====================
+  # CASSANDRA INIT (Schema Setup)
+  # =====================
+  cassandra-init:
+    image: cassandra:4.1
+    container_name: cassandra-init
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    volumes:
+      - ./cassandra/init.cql:/init.cql
+    command: cqlsh cassandra -f /init.cql
+    networks:
+      - app-network
+    restart: on-failure
+
+  # =====================
+  # MINIO (Object Storage)
+  # =====================
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    env_file:
+      - .env
+    volumes:
+      - minio-data:/data
+    networks:
+      - app-network
+
+  # =====================
+  # OLLAMA (AI Model Server)
+  # =====================
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - app-network
+
+networks:
+  app-network:
+
+volumes:
+  minio-data:
+  cassandra-data:
+  ollama-data:

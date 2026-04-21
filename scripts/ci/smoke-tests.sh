@@ -1,18 +1,26 @@
-#!/usr/bin/env bash
-set -e
+#!/bin/bash
 
 echo "Running light smoke tests..."
 
-# check images exist
-docker images | grep ent- || true
+# Run container
+docker run -d --name test-auth -p 9999:8000 ent-est-sale-core-auth
 
-# optional: start one small service
-docker run -d --name test-auth -p 9999:8001 ent-core-auth || true
-
+# Wait a bit
 sleep 5
 
-curl -f http://localhost:9999 || echo "Auth test skipped"
+# Check if running
+if [ "$(docker ps -q -f name=test-auth)" ]; then
+    echo "Container is running"
+else
+    echo "Container failed to start"
+    docker logs test-auth
+    exit 1
+fi
 
-docker rm -f test-auth || true
+# Test endpoint
+curl http://localhost:9999 || echo "Auth test skipped"
+
+# Cleanup
+docker rm -f test-auth
 
 echo "Smoke tests done."
