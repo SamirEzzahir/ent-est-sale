@@ -436,14 +436,14 @@ export function CourseUploadPage() {
           </ul>
         </Card>
       </div>
-      <Card title="Politique de publication">
+      {/* <Card title="Politique de publication">
         <div className="chips">
           <span className="chip">Role enseignant requis</span>
           <span className="chip">Token JWT obligatoire</span>
           <span className="chip">Stockage MinIO</span>
           <span className="chip">Metadonnees Cassandra</span>
         </div>
-      </Card>
+      </Card> */}
     </>
   )
 }
@@ -1500,57 +1500,117 @@ export function AdminRolesPage() {
 
 export function AdminStatisticsPage() {
   const { currentRole } = useAppContext()
+  const [users, setUsers] = useState<any[]>([])
+  const [files, setFiles] = useState<RemoteFileItem[]>([])
+  const [responseTime, setResponseTime] = useState<number | null>(null)
+  const [gatewayUp, setGatewayUp] = useState<boolean | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (currentRole !== 'admin') return
+    const start = performance.now()
+    Promise.all([
+      adminListUsersRequest().catch(() => []),
+      listRemoteFiles().catch(() => []),
+      fetch('/api/auth/me', { headers: { Authorization: `Bearer ${localStorage.getItem('access_token') || ''}` } })
+        .then(r => { setGatewayUp(r.ok || r.status === 401); setResponseTime(Math.round(performance.now() - start)) })
+        .catch(() => setGatewayUp(false)),
+    ]).then(([u, f]) => {
+      setUsers(u)
+      setFiles(f)
+    }).finally(() => setLoading(false))
+  }, [currentRole])
+
   if (currentRole !== 'admin') {
     return (
       <>
-        <PageHeader title="Administration - Statistiques" subtitle="Indicateurs ENT en temps reel (mock)." />
+        <PageHeader title="Administration - Statistiques" subtitle="Indicateurs ENT en temps reel." />
         <RoleScopeNote module="admin" />
         <ErrorState message="Acces reserve a un compte administrateur." />
       </>
     )
   }
+
+  const studentCount = users.filter(u => u.role === 'student' || (u.realmRoles || []).includes('student')).length
+  const teacherCount = users.filter(u => u.role === 'teacher' || (u.realmRoles || []).includes('teacher')).length
+  const adminCount = users.filter(u => u.role === 'admin' || (u.realmRoles || []).includes('admin')).length
+  const total = users.length || 1
+  const rtStatus = responseTime === null ? 'info' : responseTime < 200 ? 'success' : responseTime < 500 ? 'warning' : 'error'
+  const rtLabel = responseTime === null ? '...' : responseTime < 200 ? 'Optimal' : responseTime < 500 ? 'Acceptable' : 'Lent'
+
   return (
     <>
-      <PageHeader title="Administration - Statistiques" subtitle="Indicateurs ENT en temps reel (mock)." />
+      <PageHeader title="Administration - Statistiques" subtitle="Indicateurs ENT en temps reel." />
       <RoleScopeNote module="admin" />
-      <div className="grid cols-4">
-        {adminStats.map((stat) => (
-          <Card key={stat.label}>
-            <p className="muted">{stat.label}</p>
-            <h2>{stat.value}</h2>
-            <Badge value={stat.trend} type="success" />
-            <div className="progress-line"><span style={{ width: `${Math.min(95, Math.max(35, stat.value.length * 12))}%` }} /></div>
-          </Card>
-        ))}
-      </div>
-      <div className="grid cols-2">
-        <Card title="Repartition usage ENT">
-          <div className="mini-chart admin">
-            <div style={{ height: '72%' }} />
-            <div style={{ height: '84%' }} />
-            <div style={{ height: '61%' }} />
-            <div style={{ height: '90%' }} />
-            <div style={{ height: '54%' }} />
+      {loading ? <LoadingState /> : (
+        <>
+          <div className="grid cols-4">
+            <Card>
+              <p className="muted">Utilisateurs total</p>
+              <h2>{users.length}</h2>
+              <Badge value="En direct" type="success" />
+              <div className="progress-line"><span style={{ width: `${Math.min(100, users.length)}%` }} /></div>
+            </Card>
+            <Card>
+              <p className="muted">Fichiers publies</p>
+              <h2>{files.length}</h2>
+              <Badge value="En direct" type="success" />
+              <div className="progress-line"><span style={{ width: `${Math.min(100, files.length * 5)}%` }} /></div>
+            </Card>
+            <Card>
+              <p className="muted">Enseignants</p>
+              <h2>{teacherCount}</h2>
+              <Badge value="En direct" type="info" />
+              <div className="progress-line"><span style={{ width: `${Math.round((teacherCount / total) * 100)}%` }} /></div>
+            </Card>
+            <Card>
+              <p className="muted">Etudiants</p>
+              <h2>{studentCount}</h2>
+              <Badge value="En direct" type="info" />
+              <div className="progress-line"><span style={{ width: `${Math.round((studentCount / total) * 100)}%` }} /></div>
+            </Card>
           </div>
-          <div className="chart-labels"><span>Etu</span><span>Ens</span><span>Adm</span><span>Invites</span><span>Guests</span></div>
-        </Card>
-        <Card title="Sante plateforme">
-          <ul className="list">
-            <li className="forum-item"><div><strong>Disponibilite API Gateway</strong><span>99.98%</span></div><Badge value="Stable" type="success" /></li>
-            <li className="forum-item"><div><strong>Temps de reponse moyen</strong><span>184 ms</span></div><Badge value="Optimal" type="info" /></li>
-            <li className="forum-item"><div><strong>Charge serveur documents</strong><span>71%</span></div><Badge value="Surveille" type="warning" /></li>
-          </ul>
-        </Card>
-      </div>
-      <Card title="Conformite observabilite">
-        <div className="chips">
-          <span className="chip">Monitoring</span>
-          <span className="chip">Logging</span>
-          <span className="chip">Tracing</span>
-          <span className="chip">CI/CD</span>
-          <span className="chip">Scalabilite</span>
-        </div>
-      </Card>
+          <div className="grid cols-2">
+            <Card title="Repartition usage ENT">
+              <div className="mini-chart admin">
+                <div style={{ height: `${Math.max(10, Math.round((studentCount / total) * 100))}%` }} />
+                <div style={{ height: `${Math.max(10, Math.round((teacherCount / total) * 100))}%` }} />
+                <div style={{ height: `${Math.max(10, Math.round((adminCount / total) * 100))}%` }} />
+              </div>
+              <div className="chart-labels">
+                <span>Etudiants ({studentCount})</span>
+                <span>Enseignants ({teacherCount})</span>
+                <span>Admins ({adminCount})</span>
+              </div>
+            </Card>
+            <Card title="Sante plateforme">
+              <ul className="list">
+                <li className="forum-item">
+                  <div><strong>API Gateway</strong><span>{gatewayUp === null ? '...' : gatewayUp ? 'En ligne' : 'Hors ligne'}</span></div>
+                  <Badge value={gatewayUp === null ? '...' : gatewayUp ? 'Stable' : 'Erreur'} type={gatewayUp ? 'success' : 'error'} />
+                </li>
+                <li className="forum-item">
+                  <div><strong>Temps de reponse</strong><span>{responseTime !== null ? `${responseTime} ms` : '...'}</span></div>
+                  <Badge value={rtLabel} type={rtStatus} />
+                </li>
+                <li className="forum-item">
+                  <div><strong>Fichiers indexés</strong><span>{files.length} document{files.length !== 1 ? 's' : ''}</span></div>
+                  <Badge value="Cassandra" type="info" />
+                </li>
+              </ul>
+            </Card>
+          </div>
+          <Card title="Conformite observabilite">
+            <div className="chips">
+              <span className="chip">Monitoring</span>
+              <span className="chip">Logging</span>
+              <span className="chip">Tracing</span>
+              <span className="chip">CI/CD</span>
+              <span className="chip">Scalabilite</span>
+            </div>
+          </Card>
+        </>
+      )}
     </>
   )
 }
