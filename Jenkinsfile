@@ -8,7 +8,7 @@ pipeline {
             }
         }
 
-        stage('Deploy Infra (if not running)') {
+        stage('Deploy Infra') {
             steps {
                 sh 'docker compose -f docker-compose.infra.yml up -d --remove-orphans || true'
             }
@@ -16,11 +16,9 @@ pipeline {
 
         stage('Deploy App') {
             steps {
-                sh 'docker compose down -v'
-                sh 'docker compose up -d '
-                sh 'docker compose up -d gateway'
+                sh 'docker compose down'
+                sh 'docker compose up -d --build'
             }
         }
-        
     }
 }
