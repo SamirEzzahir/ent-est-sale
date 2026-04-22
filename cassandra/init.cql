@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS course_files (
     course_name TEXT,
     uploaded_by TEXT,
     upload_date TIMESTAMP,
-    minio_path  TEXT
+    minio_path  TEXT,
+    file_size   BIGINT
 );
 
 CREATE TABLE IF NOT EXISTS courses (
