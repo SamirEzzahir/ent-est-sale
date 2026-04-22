@@ -70,25 +70,25 @@ Then adjust values if needed.
 ### 3. Start the infrastructure
 
 ```bash
-docker-compose -f docker-compose.infra.yml up -d
+docker compose -f docker-compose.infra.yml up -d
 ```
 
 This starts only the stable infrastructure layer in the background (Keycloak, Cassandra, MinIO, Ollama). The infrastructure takes a few minutes to be fully ready (Keycloak ~10 min, Cassandra ~7 min). You can monitor logs with:
 
 ```bash
-docker-compose -f docker-compose.infra.yml logs -f
+docker compose -f docker-compose.infra.yml logs -f
 ```
 
 ### 4. Start the application services
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Check all running services
 
 ```bash
-docker-compose -f docker-compose.infra.yml -f docker-compose.yml ps
+docker compose -f docker-compose.infra.yml -f docker-compose.yml ps
 ```
 
 ## Current Access Points
