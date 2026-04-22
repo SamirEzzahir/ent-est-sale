@@ -63,19 +63,43 @@ function RoleScopeNote({ module }: { module: string }) {
 }
 
 export function DashboardPage() {
-  const { currentRole } = useAppContext()
+  const { currentRole, currentUser } = useAppContext()
   const { rolePrefix } = useParams()
   const base = rolePrefix ? `/${rolePrefix}` : `/${currentRole}`
   const [activeTab, setActiveTab] = useState(entContent.dashboard.tabs[0])
   const [isNoticeVisible, setIsNoticeVisible] = useState(true)
   const [activeMetric, setActiveMetric] = useState(0)
+  const [realUsers, setRealUsers] = useState<any[]>([])
+  const [realFiles, setRealFiles] = useState<RemoteFileItem[]>([])
+  const [gatewayUp, setGatewayUp] = useState<boolean | null>(null)
+  const [dataLoaded, setDataLoaded] = useState(false)
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token') || ''
+    const promises: Promise<any>[] = [
+      listRemoteFiles().catch(() => []),
+      fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => setGatewayUp(r.ok || r.status === 401))
+        .catch(() => setGatewayUp(false)),
+    ]
+    if (currentRole === 'admin') {
+      promises.push(adminListUsersRequest().catch(() => []))
+    }
+    Promise.all(promises).then(([files, , users]) => {
+      setRealFiles(files || [])
+      if (users) setRealUsers(users)
+    }).finally(() => setDataLoaded(true))
+  }, [currentRole])
+
+  const myFiles = realFiles.filter(f => f.uploaded_by === currentUser?.email || f.uploaded_by === currentUser?.name)
+  const availabilityLabel = gatewayUp === null ? '...' : gatewayUp ? '100%' : 'Hors ligne'
 
   const dashboardByRole = {
     student: {
       roleLabel: 'Etudiant',
       subtitle: 'Suivez vos cours, devoirs, examens et notifications academiques.',
       heroStats: [
-        { value: '87%', label: 'Progression semestre' },
+        { value: String(realFiles.length), label: 'Ressources disponibles' },
         { value: '4', label: 'Devoirs en attente' },
         { value: '2', label: 'Examens a venir' },
       ],
@@ -83,7 +107,7 @@ export function DashboardPage() {
         { label: 'Moyenne generale', value: '15.8/20', badge: 'Bon niveau', badgeType: 'info' as const },
         { label: 'Presence', value: '96%', badge: '+2%', badgeType: 'success' as const },
         { label: 'Messages non lus', value: '7', badge: 'Nouveau', badgeType: 'warning' as const },
-        { label: 'Ressources vues', value: '42', badge: 'Cette semaine', badgeType: 'info' as const },
+        { label: 'Ressources disponibles', value: String(realFiles.length), badge: 'En direct', badgeType: 'info' as const },
       ],
       priorities: ['Consulter les notes publiees', 'Finaliser le devoir Frontend', "Verifier l'horaire des examens"],
       activities: [
@@ -97,13 +121,13 @@ export function DashboardPage() {
       roleLabel: 'Enseignant',
       subtitle: 'Pilotez vos modules, publications, corrections et echanges avec les etudiants.',
       heroStats: [
-        { value: '6', label: 'Cours actifs' },
-        { value: '31', label: 'Copies a corriger' },
-        { value: '12', label: 'Messages recus' },
+        { value: String(myFiles.length), label: 'Fichiers publies' },
+        { value: String(realFiles.length), label: 'Total plateforme' },
+        { value: availabilityLabel, label: 'Disponibilite API' },
       ],
       summaryCards: [
-        { label: 'Ressources publiees', value: '126', badge: 'Ce semestre', badgeType: 'info' as const },
-        { label: 'Devoirs corriges', value: '214', badge: '+18', badgeType: 'success' as const },
+        { label: 'Mes fichiers publies', value: String(myFiles.length), badge: 'En direct', badgeType: 'info' as const },
+        { label: 'Total plateforme', value: String(realFiles.length), badge: 'En direct', badgeType: 'success' as const },
         { label: 'Taux de validation', value: '91%', badge: 'Promotion S4', badgeType: 'success' as const },
         { label: 'Demandes etudiants', value: '9', badge: 'A traiter', badgeType: 'warning' as const },
       ],
@@ -120,14 +144,14 @@ export function DashboardPage() {
       subtitle: 'Supervisez les micro-services ENT, les utilisateurs et les operations systeme.',
       heroStats: [
         { value: '4', label: 'Micro-services coeur' },
-        { value: '99.98%', label: 'Disponibilite' },
-        { value: '93', label: 'Tickets support' },
+        { value: availabilityLabel, label: 'Disponibilite' },
+        { value: String(realUsers.length), label: 'Utilisateurs' },
       ],
       summaryCards: [
-        { label: 'Utilisateurs actifs', value: '2 483', badge: '+5.2%', badgeType: 'success' as const },
-        { label: 'Cours en ligne', value: '148', badge: 'Modules publies', badgeType: 'info' as const },
-        { label: 'Fichiers MinIO', value: '1.8 TB', badge: 'Stockage ENT', badgeType: 'warning' as const },
-        { label: 'Alertes systeme', value: '3', badge: 'A verifier', badgeType: 'warning' as const },
+        { label: 'Utilisateurs actifs', value: dataLoaded ? String(realUsers.length) : '...', badge: 'En direct', badgeType: 'success' as const },
+        { label: 'Fichiers publies', value: dataLoaded ? String(realFiles.length) : '...', badge: 'En direct', badgeType: 'info' as const },
+        { label: 'API Gateway', value: gatewayUp === null ? '...' : gatewayUp ? 'En ligne' : 'Hors ligne', badge: gatewayUp ? 'Stable' : 'Hors ligne', badgeType: gatewayUp ? 'success' as const : 'warning' as const },
+        { label: 'Alertes systeme', value: '0', badge: 'Surveille', badgeType: 'warning' as const },
       ],
       priorities: ['Suivre les indicateurs ENT', 'Traiter les tickets de support', 'Verifier la disponibilite des services'],
       activities: [
@@ -137,7 +161,7 @@ export function DashboardPage() {
       ],
       widgets: ['Admin', 'Messagerie', 'Documents', 'Examens', 'Calendrier', 'Assistance ENT'],
     },
-  } as const
+  }
 
   const roleConfig = dashboardByRole[currentRole]
   const widgets = roleConfig.widgets
@@ -1535,7 +1559,7 @@ export function AdminStatisticsPage() {
   const teacherCount = users.filter(u => u.role === 'teacher' || (u.realmRoles || []).includes('teacher')).length
   const adminCount = users.filter(u => u.role === 'admin' || (u.realmRoles || []).includes('admin')).length
   const total = users.length || 1
-  const rtStatus = responseTime === null ? 'info' : responseTime < 200 ? 'success' : responseTime < 500 ? 'warning' : 'error'
+  const rtStatus = responseTime === null ? 'info' : responseTime < 200 ? 'success' : 'warning'
   const rtLabel = responseTime === null ? '...' : responseTime < 200 ? 'Optimal' : responseTime < 500 ? 'Acceptable' : 'Lent'
 
   return (
@@ -1587,7 +1611,7 @@ export function AdminStatisticsPage() {
               <ul className="list">
                 <li className="forum-item">
                   <div><strong>API Gateway</strong><span>{gatewayUp === null ? '...' : gatewayUp ? 'En ligne' : 'Hors ligne'}</span></div>
-                  <Badge value={gatewayUp === null ? '...' : gatewayUp ? 'Stable' : 'Erreur'} type={gatewayUp ? 'success' : 'error'} />
+                  <Badge value={gatewayUp === null ? '...' : gatewayUp ? 'Stable' : 'Erreur'} type={gatewayUp ? 'success' : 'warning'} />
                 </li>
                 <li className="forum-item">
                   <div><strong>Temps de reponse</strong><span>{responseTime !== null ? `${responseTime} ms` : '...'}</span></div>
