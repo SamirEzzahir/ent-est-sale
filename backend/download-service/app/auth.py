@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://keycloak:8080")
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "ent-est-sale")
 KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "ent-backend")
+KEYCLOAK_VERIFY_AUD = os.getenv("KEYCLOAK_VERIFY_AUD", "false").lower() != "false"
 
 _jwks_cache: dict | None = None
 
@@ -40,7 +41,11 @@ def _pick_role(roles: list) -> str:
 def _decode_token(token: str) -> dict:
     jwks = _get_jwks()
     try:
-        payload = jwt.decode(token, jwks, algorithms=["RS256"], audience=KEYCLOAK_CLIENT_ID)
+        decode_options = {"verify_aud": KEYCLOAK_VERIFY_AUD}
+        decode_kw = {"algorithms": ["RS256"], "options": decode_options}
+        if KEYCLOAK_VERIFY_AUD:
+            decode_kw["audience"] = KEYCLOAK_CLIENT_ID
+        payload = jwt.decode(token, jwks, **decode_kw)
     except JWTError as exc:
         raise HTTPException(status_code=401, detail=f"Invalid token: {exc}")
 

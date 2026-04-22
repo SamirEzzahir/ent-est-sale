@@ -291,13 +291,13 @@ export function CoursesPage() {
         ))}
       </div>
       {!filteredCourses.length && <EmptyState message="Aucun cours ne correspond aux filtres actifs." />}
-      <Card title="Conformite Microservice - Gestion des cours">
+      {/* <Card title="Conformite Microservice - Gestion des cours">
         <ul className="list">
           <li className="forum-item"><div><strong>Responsabilite</strong><span>Creation, modification et consultation des cours en ligne.</span></div><Badge value="Spec PDF" type="info" /></li>
           <li className="forum-item"><div><strong>Metadonnees</strong><span>Titre, description et references de fichiers en Cassandra.</span></div><Badge value="Cassandra" /></li>
           <li className="forum-item"><div><strong>Securite</strong><span>Acces protege par token JWT via service Auth/Keycloak.</span></div><Badge value="JWT" type="success" /></li>
         </ul>
-      </Card>
+      </Card> */}
     </>
   )
 }
@@ -576,13 +576,13 @@ export function FilesPage() {
       {!loading && !error && !filteredFiles.length ? (
         <EmptyState message="Aucun fichier trouve. Essayez un autre mot-cle." />
       ) : null}
-      <Card title="Conformite Microservice - Gestion des fichiers">
+      {/* <Card title="Conformite Microservice - Gestion des fichiers">
         <ul className="list">
           <li className="forum-item"><div><strong>Stockage</strong><span>Fichiers pedagogiques stockes dans MinIO (objet).</span></div><Badge value="MinIO" type="info" /></li>
           <li className="forum-item"><div><strong>Securite</strong><span>Generation de liens securises apres authentification.</span></div><Badge value="JWT" type="success" /></li>
           <li className="forum-item"><div><strong>Traçabilite</strong><span>Metadonnees indexees en Cassandra pour la recherche.</span></div><Badge value="Cassandra" /></li>
         </ul>
-      </Card>
+      </Card> */}
     </>
   )
 }
@@ -1436,7 +1436,7 @@ export function AdminUsersPage() {
         </Card>
       )}
 
-      <Card title="Conformite Microservice - Administration">
+     {/*  <Card title="Conformite Microservice - Administration">
         <ul className="list">
           <li className="forum-item">
             <div>
@@ -1467,7 +1467,7 @@ export function AdminUsersPage() {
             <Badge value="DELETE /api/admin/users/{id}" type="warning" />
           </li>
         </ul>
-      </Card>
+      </Card> */}
     </>
   )
 }
