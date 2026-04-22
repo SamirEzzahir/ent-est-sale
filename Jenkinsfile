@@ -63,7 +63,7 @@ pipeline {
         }
 
         stage('Docker Login') {
-            when { branch 'main' }
+            when { branch 'develop' }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
@@ -76,14 +76,14 @@ pipeline {
         }
 
         stage('Push Images') {
-            when { branch 'main' }
+            when { branch 'develop' }
             steps {
                 sh './scripts/ci/build-images.sh "$FRONT" "$BACK" push'
             }
         }
 
         stage('Deploy') {
-            when { branch 'main' }
+            when { branch 'develop' }
             steps {
                 sh './scripts/cd/deploy.sh'
             }
