@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 CORE_AUTH_URL = os.getenv("CORE_AUTH_URL", "http://core-auth:8001/api/auth").rstrip("/")
 DOWNLOAD_SERVICE_URL = os.getenv("DOWNLOAD_SERVICE_URL", "http://download-service:8003/api/download").rstrip("/")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "tinyllama")
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -80,7 +80,7 @@ async def list_ollama_models() -> list[str]:
 
 async def generate_with_ollama(prompt: str) -> str:
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=180) as client:
             response = await client.post(
                 f"{OLLAMA_URL}/api/generate",
                 json={
