@@ -42,6 +42,19 @@ export async function getFileBlob(fileId: string, disposition: 'attachment' | 'i
   return response.blob()
 }
 
+export async function updateRemoteFile(fileId: string, payload: { filename?: string; course_name: string }): Promise<RemoteFileItem> {
+  const response = await fetch(`${downloadBase()}/files/${encodeURIComponent(fileId)}`, {
+    method: 'PATCH',
+    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const text = await readResponseText(response)
+  if (!response.ok) {
+    throw new Error(parseApiError(text, response.status))
+  }
+  return JSON.parse(text) as RemoteFileItem
+}
+
 export async function deleteRemoteFile(fileId: string): Promise<void> {
   const response = await fetch(`${downloadBase()}/files/${encodeURIComponent(fileId)}`, {
     method: 'DELETE',

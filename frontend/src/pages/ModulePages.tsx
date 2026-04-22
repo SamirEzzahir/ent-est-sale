@@ -6,7 +6,7 @@ import { useAppContext } from '../context/AppContext'
 import { adminStats, assignments, courses, events, forumTopics, messages, notifications, users } from '../data/mockData'
 import { Badge, Card, EmptyState, ErrorState, LoadingState, PageHeader, SearchField } from '../components/ui'
 import { entContent } from '../config/content'
-import { listRemoteFiles, getFileBlob, type RemoteFileItem } from '../lib/downloadApi'
+import { listRemoteFiles, getFileBlob, updateRemoteFile, type RemoteFileItem } from '../lib/downloadApi'
 import { uploadCourseFile } from '../lib/uploadApi'
 import {
   adminCreateUserRequest,
@@ -480,6 +480,10 @@ export function FilesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activity, setActivity] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editFilename, setEditFilename] = useState('')
+  const [editCourseName, setEditCourseName] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const loadFiles = async () => {
     setLoading(true)
@@ -544,53 +548,105 @@ export function FilesPage() {
             <tbody>
               {filteredFiles.map((file) => (
                 <tr key={file.id}>
-                  <td>{file.filename}</td>
-                  <td>{file.course_name}</td>
-                  <td>{file.uploaded_by}</td>
-                  <td>{new Date(file.upload_date).toLocaleString()}</td>
-                  <td>
-                    <div className="toolbar">
-                      <button
-                        className="ghost-btn small"
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const blob = await getFileBlob(file.id, 'attachment')
-                            const url = URL.createObjectURL(blob)
-                            const link = document.createElement('a')
-                            link.href = url
-                            link.download = file.filename
-                            document.body.appendChild(link)
-                            link.click()
-                            link.remove()
-                            setTimeout(() => URL.revokeObjectURL(url), 1000)
-                            setActivity(`Telechargement lance pour ${file.filename}.`)
-                          } catch (err) {
-                            setError(err instanceof Error ? err.message : 'Telechargement impossible')
-                          }
-                        }}
-                      >
-                        Download
-                      </button>
-                      <button
-                        className="ghost-btn small"
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const blob = await getFileBlob(file.id, 'inline')
-                            const url = URL.createObjectURL(blob)
-                            window.open(url, '_blank', 'noopener,noreferrer')
-                            setTimeout(() => URL.revokeObjectURL(url), 60000)
-                            setActivity(`Apercu ouvert pour ${file.filename}.`)
-                          } catch (err) {
-                            setError(err instanceof Error ? err.message : 'Ouverture impossible')
-                          }
-                        }}
-                      >
-                        Apercu
-                      </button>
-                    </div>
-                  </td>
+                  {editingId === file.id ? (
+                    <>
+                      <td><input className="input small" value={editFilename} onChange={e => setEditFilename(e.target.value)} placeholder="Nom du fichier" /></td>
+                      <td><input className="input small" value={editCourseName} onChange={e => setEditCourseName(e.target.value)} placeholder="Nom du cours" /></td>
+                      <td>{file.uploaded_by}</td>
+                      <td>{new Date(file.upload_date).toLocaleString()}</td>
+                      <td>
+                        <div className="toolbar">
+                          <button
+                            className="primary-btn small"
+                            type="button"
+                            disabled={saving}
+                            onClick={async () => {
+                              setSaving(true)
+                              setError(null)
+                              try {
+                                const updated = await updateRemoteFile(file.id, { filename: editFilename, course_name: editCourseName })
+                                setItems(prev => prev.map(f => f.id === file.id ? updated : f))
+                                setActivity(`Document "${updated.filename}" mis a jour.`)
+                                setEditingId(null)
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : 'Mise a jour impossible')
+                              } finally {
+                                setSaving(false)
+                              }
+                            }}
+                          >
+                            {saving ? 'Enregistrement...' : 'Enregistrer'}
+                          </button>
+                          <button className="ghost-btn small" type="button" onClick={() => setEditingId(null)}>Annuler</button>
+                        </div>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>{file.filename}</td>
+                      <td>{file.course_name}</td>
+                      <td>{file.uploaded_by}</td>
+                      <td>{new Date(file.upload_date).toLocaleString()}</td>
+                      <td>
+                        <div className="toolbar">
+                          <button
+                            className="ghost-btn small"
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const blob = await getFileBlob(file.id, 'attachment')
+                                const url = URL.createObjectURL(blob)
+                                const link = document.createElement('a')
+                                link.href = url
+                                link.download = file.filename
+                                document.body.appendChild(link)
+                                link.click()
+                                link.remove()
+                                setTimeout(() => URL.revokeObjectURL(url), 1000)
+                                setActivity(`Telechargement lance pour ${file.filename}.`)
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : 'Telechargement impossible')
+                              }
+                            }}
+                          >
+                            Download
+                          </button>
+                          <button
+                            className="ghost-btn small"
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const blob = await getFileBlob(file.id, 'inline')
+                                const url = URL.createObjectURL(blob)
+                                window.open(url, '_blank', 'noopener,noreferrer')
+                                setTimeout(() => URL.revokeObjectURL(url), 60000)
+                                setActivity(`Apercu ouvert pour ${file.filename}.`)
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : 'Ouverture impossible')
+                              }
+                            }}
+                          >
+                            Apercu
+                          </button>
+                          {canUploadFile && (
+                            <button
+                              className="ghost-btn small"
+                              type="button"
+                              onClick={() => {
+                                setEditingId(file.id)
+                                setEditFilename(file.filename)
+                                setEditCourseName(file.course_name)
+                                setError(null)
+                                setActivity(null)
+                              }}
+                            >
+                              Modifier
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>
