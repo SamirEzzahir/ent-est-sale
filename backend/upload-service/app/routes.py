@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+MAX_FILE_SIZE = 100 * 1024 * 1024 * 1024  # 100MB
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".pptx", ".xlsx", ".jpg", ".jpeg", ".png"}
 
 

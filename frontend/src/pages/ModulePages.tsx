@@ -1030,7 +1030,7 @@ export function AssistantPage() {
         )}
       </Card>
 
-      <Card title="Conformite IA du projet">
+     {/*  <Card title="Conformite IA du projet">
         <ul className="list">
           <li className="forum-item">
             <div>
@@ -1068,7 +1068,7 @@ export function AssistantPage() {
             <Badge value="Conversationnel" type="info" />
           </li>
         </ul>
-      </Card>
+      </Card> */}
     </>
   )
 }
