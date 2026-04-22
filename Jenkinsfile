@@ -10,7 +10,7 @@ pipeline {
 
         stage('Deploy Infra (if not running)') {
             steps {
-                sh 'docker compose -f docker-compose.infra.yml up -d || true'
+                sh 'docker compose -f docker-compose.infra.yml up -d --remove-orphans'
             }
         }
 

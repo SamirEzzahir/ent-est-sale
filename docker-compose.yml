@@ -9,7 +9,7 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx:/etc/nginx:ro
+      - ./nginx:/etc/nginx
     depends_on:
       - frontend
       - core-auth
