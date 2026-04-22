@@ -63,7 +63,9 @@ pipeline {
         }
 
         stage('Docker Login') {
-            when { branch 'develop' }
+            when {
+    expression { env.BRANCH_NAME == 'develop' }
+}
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
@@ -76,14 +78,18 @@ pipeline {
         }
 
         stage('Push Images') {
-            when { branch 'develop' }
+            when {
+    expression { env.BRANCH_NAME == 'develop' }
+}
             steps {
                 sh './scripts/ci/build-images.sh "$FRONT" "$BACK" push'
             }
         }
 
         stage('Deploy') {
-            when { branch 'develop' }
+            when {
+    expression { env.BRANCH_NAME == 'develop' }
+}
             steps {
                 sh './scripts/cd/deploy.sh'
             }
